@@ -1,0 +1,5 @@
+{
+  "etf_file": "data/wind/current/01_ETF清单和日频公式.xlsx",
+  "tl_file": "data/wind/current/02_TL日频公式.xlsx",
+  "convertible_bond_file": "data/wind/current/03_可转债数据.xlsx"
+}

@@ -1,0 +1,47 @@
+# Python/cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.tmp
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local secrets and environment
+.env
+.env.*
+!.env.example
+
+# macOS/editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Node/build artifacts
+node_modules/
+**/node_modules
+/dist/
+/build/
+templates/build/output/
+
+# Runtime logs
+logs/*
+!logs/.gitkeep
+*.log
+
+# Generated reports and dashboards
+outputs/*
+!outputs/.gitkeep
+
+# Local databases and backups
+data/*.db
+data/*.db-*
+data/db_backups/
+
+# Source Excel snapshots and archives contain customer data.
+data/archive/
+data/wind/current/*.xlsx
+!data/wind/current/.gitkeep
+
+# Temporary spreadsheet inspection artifacts.
+*.inspect.ndjson

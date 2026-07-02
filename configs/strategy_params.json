@@ -1,0 +1,77 @@
+{
+  "etf": {
+    "buy_volume_ratio_min": 1.1,
+    "sell_ma10_volume_ratio_min": 1.2,
+    "sell_ma5_volume_ratio_min": 1.5,
+    "score_weights": {
+      "trend": 0.35,
+      "macd": 0.25,
+      "volume": 0.25,
+      "share_change": 0.15
+    }
+  },
+  "tl": {
+    "daily_kdj_lookback": 3,
+    "daily_j_low_threshold": 5,
+    "weekly_kdj_lookback": 2,
+    "weekly_j_low_threshold": 20,
+    "macd_hist_min_delta": 0,
+    "weekly_no_trade_hard_veto": true
+  },
+  "convertible_bond": {
+    "price_limit": 140,
+    "min_price": 100,
+    "top_n": 10,
+    "high_ytm_hard_exclude": 15,
+    "severe_negative_ytm_hard_exclude": -5,
+    "high_premium_penalty_threshold": 35,
+    "high_premium_hard_exclude": 50,
+    "min_remaining_size_hard_exclude": 0.5,
+    "max_per_industry_l1": 2,
+    "max_per_industry_l2": 2,
+    "no_redemption_valid_days": 180,
+    "exclude_st_stock": true,
+    "exclude_unresolved_redemption_trigger": false,
+    "hard_exclude_ratings": [
+      "A",
+      "A-",
+      "BBB+",
+      "BBB",
+      "BBB-",
+      "BB+",
+      "BB",
+      "BB-",
+      "B+",
+      "B",
+      "B-",
+      "CCC",
+      "CC",
+      "C",
+      "D"
+    ],
+    "negative_ytm_penalty": 28,
+    "high_premium_penalty": 28,
+    "negative_growth_penalty": 10,
+    "negative_acceleration_penalty": 5,
+    "negative_profit_penalty": 14,
+    "unstable_growth_base_penalty": 10,
+    "extreme_growth_penalty": 6,
+    "growth_winsor_lower": -100,
+    "growth_winsor_upper": 150,
+    "extreme_growth_threshold": 150,
+    "small_profit_base_threshold": 1,
+    "score_weights": {
+      "fundamental": 0.25,
+      "premium": 0.2,
+      "ytm": 0.15,
+      "term": 0.1,
+      "credit": 0.15,
+      "redemption": 0.1,
+      "scale": 0.05
+    }
+  },
+  "risk": {
+    "max_new_etf_candidates": 5,
+    "max_sell_alerts_to_highlight": 5
+  }
+}

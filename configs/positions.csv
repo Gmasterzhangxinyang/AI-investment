@@ -1,0 +1,3 @@
+asset_type,code,name,status,entry_date,entry_price,position_size,notes
+ETF,510880.SH,红利ETF,holding,2026-05-20,3.25,100000,样例持仓：用于测试平仓提示
+ETF,512760.SH,芯片,closed,2026-05-18,1.20,0,样例已平仓：重新进入建仓池

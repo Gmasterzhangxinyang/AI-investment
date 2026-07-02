@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI 投研工作台</title>
+    <link rel="stylesheet" href="./assets/styles.css?v=20260701-modules-v1" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="rail">
+        <a class="brand" href="#chat" aria-label="AI 投研工作台">
+          <span class="brand-copy">
+            <strong>AI 投研</strong>
+            <small>Pro</small>
+          </span>
+        </a>
+
+        <nav class="nav" aria-label="Main navigation">
+          <span class="nav-label">工作区</span>
+          <a href="#chat" class="active">投研问答</a>
+          <a href="#report">每日报告</a>
+          <span class="nav-label">资产研究</span>
+          <a href="#etf">ETF</a>
+          <a href="#tl">TL</a>
+          <a href="#cb">可转债</a>
+          <a href="#assets">标的档案</a>
+          <span class="nav-label">系统</span>
+          <a href="#data">数据状态</a>
+          <a href="#agents">运行审计</a>
+          <a href="#settings">策略参数</a>
+        </nav>
+
+        <div class="rail-footer">
+          <span id="data-status" class="status-pill">Loading</span>
+          <span id="rail-date" class="rail-date">--</span>
+        </div>
+      </aside>
+
+      <main class="main-shell">
+        <header class="app-header">
+          <div>
+            <p class="eyebrow">Wind 数据 · 规则信号 · 风险复核</p>
+            <h1 id="page-title">投研问答</h1>
+          </div>
+          <div class="header-actions">
+            <button id="refresh-data" class="button primary" type="button">一键刷新</button>
+            <button id="deep-review" class="button" type="button">AI 深度复核</button>
+            <button id="export-pdf" class="button" type="button">导出 PDF</button>
+            <a id="report-link" class="button" href="#" target="_blank">打开 Excel 日报</a>
+          </div>
+        </header>
+
+        <section id="refresh-monitor" class="refresh-monitor" hidden aria-live="polite">
+          <div class="refresh-monitor-head">
+            <div>
+              <span class="eyebrow">刷新进度</span>
+              <strong id="refresh-stage">等待刷新</strong>
+            </div>
+            <span id="refresh-percent" class="status-pill">0%</span>
+          </div>
+          <div class="refresh-bar" aria-hidden="true"><span id="refresh-bar-fill"></span></div>
+          <div id="refresh-log" class="refresh-log">暂无运行日志</div>
+        </section>
+
+        <section id="chat" class="view active">
+          <div class="chat-layout">
+            <section class="chat-pane" aria-label="AI chat">
+              <div class="command-panel">
+                <div class="chat-head">
+                  <div class="chat-brand-row">
+                    <span>AI 投研助手</span>
+                    <span>规则驱动 · 可审计</span>
+                  </div>
+                  <div>
+                    <p class="eyebrow">投研问答</p>
+                    <h2>今天想看什么？</h2>
+                    <p>可以询问 ETF、TL、可转债、数据质量和运行审计。交易信号只来自确定性规则，AI 只解释证据。</p>
+                  </div>
+                </div>
+
+                <form id="chat-form" class="chat-composer">
+                  <input id="chat-input" name="question" autocomplete="off" placeholder="询问 ETF、TL、可转债或数据质量" />
+                  <button class="button primary" type="submit">发送</button>
+                </form>
+
+                <div class="quick-prompts" aria-label="Suggested prompts">
+                  <button type="button" data-question="今天整体结论是什么？客户能不能直接看？">今日结论</button>
+                  <button type="button" data-question="今天有哪些 ETF 满足建仓条件？如果没有，原因是什么？">ETF 建仓</button>
+                  <button type="button" data-question="TL 今天是什么状态？请按客户规则解释 MACD 和 KDJ。">TL 状态</button>
+                  <button type="button" data-question="当前数据质量有什么问题？哪些需要人工确认？">数据质量</button>
+                </div>
+              </div>
+
+              <div id="transcript-panel" class="transcript-panel is-empty">
+                <div class="transcript-head">
+                  <span>对话记录</span>
+                  <span>答案必须引用规则或数据库</span>
+                </div>
+                <div id="chat-log" class="chat-log" aria-live="polite">
+                  <article class="message assistant">
+                    <div class="message-avatar">AI</div>
+                    <div class="message-body">
+                      <p>已读取最新投研数据。你可以直接问今天的 ETF、TL、可转债、风险提示或数据质量。</p>
+                      <span>来源：最新日报与本地数据库</span>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </section>
+
+            <aside class="context-pane" aria-label="Data context">
+              <div class="panel-head">
+                <p class="eyebrow">上下文</p>
+                <h3>AI 可用数据</h3>
+              </div>
+              <div id="context-grid" class="context-grid"></div>
+              <div class="source-box">
+                <h4>运行链路</h4>
+                <div id="agent-runtime" class="runtime-list">
+                  <div><span>等待中</span><strong>等待问题</strong></div>
+                </div>
+              </div>
+              <div class="source-box">
+                <h4>证据来源</h4>
+                <div id="evidence-list" class="evidence-list">
+                  <div>提问后显示本次调用的数据工具和来源。</div>
+                </div>
+              </div>
+              <div class="source-box">
+                <h4>数据来源</h4>
+                <ul id="context-sources"></ul>
+              </div>
+              <div class="source-box">
+                <h4>模型边界</h4>
+                <p id="model-policy">信号由代码生成，AI 只解释和复核。</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="report" class="view">
+          <div class="memo-shell">
+            <div class="memo-cover">
+              <p class="eyebrow">每日报告</p>
+              <h2>投研日报</h2>
+              <span id="report-date" class="date-chip">--</span>
+            </div>
+            <article class="memo-section">
+              <h3>今日结论</h3>
+              <p id="research-summary">正在读取数据。</p>
+            </article>
+            <article class="card">
+              <div class="section-head compact">
+                <div>
+                  <h3>直达</h3>
+                  <p>按资产类别查看信号、解释和回测验证。</p>
+                </div>
+              </div>
+              <div class="shortcut-grid">
+                <a href="#etf">ETF 信号与回测</a>
+                <a href="#tl">TL 状态诊断</a>
+                <a href="#cb">可转债打分</a>
+                <a href="#assets">标的档案</a>
+              </div>
+            </article>
+            <div id="kpi-grid" class="kpi-grid"></div>
+            <div class="memo-grid">
+              <article class="card">
+                <h3>ETF 建仓候选</h3>
+                <div class="table-wrap"><table id="buy-table"></table></div>
+              </article>
+              <article class="card">
+                <h3>ETF 平仓提示</h3>
+                <div class="table-wrap"><table id="sell-table"></table></div>
+              </article>
+            </div>
+            <article class="card">
+              <h3>复核意见</h3>
+              <p id="deep-review-status" class="plain-text">默认使用稳定模式。点击“AI 深度复核”后才启用四角色复核。</p>
+              <div id="ai-committee-list" class="ai-grid"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="etf" class="view">
+          <div class="asset-workspace">
+            <div class="module-hero">
+              <div>
+                <p class="eyebrow">ETF</p>
+                <h2>ETF 轮动与验证</h2>
+                <p>建仓、平仓、关注池和近 30 个交易日次日验证放在同一个工作区，便于复盘规则是否有效。</p>
+              </div>
+              <div class="shortcut-row">
+                <a href="#assets">ETF 档案</a>
+                <a href="#settings">参数</a>
+              </div>
+            </div>
+            <div id="etf-module-kpis" class="kpi-grid compact"></div>
+            <div class="page-grid">
+              <article class="card">
+                <h3>建仓候选</h3>
+                <div class="table-wrap"><table id="etf-buy-table"></table></div>
+              </article>
+              <article class="card">
+                <h3>平仓提示</h3>
+                <div class="table-wrap"><table id="etf-sell-table"></table></div>
+              </article>
+              <article class="card span-2">
+                <h3>关注池</h3>
+                <div class="table-wrap"><table id="etf-watch-table"></table></div>
+              </article>
+              <article class="card span-2">
+                <h3>近30交易日次日验证</h3>
+                <div class="table-wrap"><table id="etf-nextday-table"></table></div>
+              </article>
+              <article class="card span-2">
+                <h3>完整交易回测</h3>
+                <div class="table-wrap"><table id="etf-trades-table"></table></div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="tl" class="view">
+          <div class="asset-workspace">
+            <div class="module-hero">
+              <div>
+                <p class="eyebrow">TL</p>
+                <h2>30年国债期货 TL</h2>
+                <p>以日频规则输出不做交易、关注交易或建议建仓；当前第一版只做状态诊断，不模拟收益。</p>
+              </div>
+              <div class="shortcut-row">
+                <a href="#assets">TL 档案</a>
+                <a href="#settings">参数</a>
+              </div>
+            </div>
+            <div class="page-grid">
+              <article class="card">
+                <h3>今日状态</h3>
+                <div id="tl-panel-state" class="state-badge">--</div>
+                <dl id="tl-panel-metrics" class="metric-list"></dl>
+              </article>
+              <article class="card">
+                <h3>历史诊断</h3>
+                <div class="table-wrap"><table id="tl-backtest-table"></table></div>
+              </article>
+              <article class="card span-2">
+                <h3>近期状态</h3>
+                <div class="table-wrap"><table id="tl-panel-recent-table"></table></div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="cb" class="view">
+          <div class="asset-workspace">
+            <div class="module-hero">
+              <div>
+                <p class="eyebrow">可转债</p>
+                <h2>可转债风险过滤与打分</h2>
+                <p>先做价格、信用、强赎、YTM、规模等风险过滤，再对剩余标的综合打分并做行业分散。</p>
+              </div>
+              <div class="shortcut-row">
+                <a href="#assets">转债档案</a>
+                <a href="#settings">参数</a>
+              </div>
+            </div>
+            <div id="cb-module-kpis" class="kpi-grid compact"></div>
+            <div class="page-grid">
+              <article class="card span-2">
+                <h3>Top10</h3>
+                <div class="table-wrap"><table id="cb-top-table"></table></div>
+              </article>
+              <article class="card span-2">
+                <h3>候选池全量排序</h3>
+                <div class="table-wrap"><table id="cb-ranked-table"></table></div>
+              </article>
+              <article class="card span-2">
+                <h3>可转债质检与风险</h3>
+                <div class="table-wrap"><table id="cb-quality-table"></table></div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="signals" class="view">
+          <div class="page-grid">
+            <article class="card span-2">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">信号总览</p>
+                  <h2>策略信号</h2>
+                </div>
+              </div>
+              <div class="matrix-tabs">
+                <span>ETF</span>
+                <span>TL</span>
+                <span>可转债</span>
+              </div>
+            </article>
+            <article class="card">
+              <h3>TL 日频状态</h3>
+              <div id="tl-state" class="state-badge">--</div>
+              <dl id="tl-metrics" class="metric-list"></dl>
+            </article>
+            <article class="card">
+              <h3>TL 近期状态</h3>
+              <div class="table-wrap flat"><table id="tl-recent-table"></table></div>
+            </article>
+            <article class="card span-2">
+              <h3>可转债 Top10</h3>
+              <div class="table-wrap"><table id="cb-table"></table></div>
+            </article>
+            <article class="card">
+              <h3>历史诊断摘要</h3>
+              <div class="table-wrap"><table id="backtest-summary-table"></table></div>
+            </article>
+            <article class="card">
+              <h3>ETF 回测交易</h3>
+              <div class="table-wrap"><table id="backtest-trades-table"></table></div>
+            </article>
+            <article class="card span-2">
+              <h3>ETF 次日验证近30交易日</h3>
+              <div class="table-wrap"><table id="backtest-nextday-table"></table></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="watchlist" class="view">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">观察列表</p>
+              <h2>关注池</h2>
+              <p>关注池放接近触发、但还没完全满足条件的 ETF。点击标的可看最近指标。</p>
+            </div>
+            <div id="watch-detail-title" class="date-chip">请选择标的</div>
+          </div>
+          <div class="watch-grid">
+            <div class="card">
+              <div class="table-wrap"><table id="watch-table"></table></div>
+            </div>
+            <aside class="card detail-panel">
+              <h3 id="watch-selected-name">ETF 详情</h3>
+              <dl id="watch-selected-metrics" class="metric-list"></dl>
+              <div class="table-wrap flat"><table id="watch-history-table"></table></div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="assets" class="view">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">标的档案</p>
+              <h2>标的档案</h2>
+            </div>
+            <div class="asset-search">
+              <input id="asset-search" autocomplete="off" placeholder="搜索代码或名称" />
+            </div>
+          </div>
+          <div class="asset-grid">
+            <article class="card">
+              <h3>标的列表</h3>
+              <div class="table-wrap"><table id="asset-table"></table></div>
+            </article>
+            <article class="card detail-panel">
+              <h3 id="asset-detail-title">请选择标的</h3>
+              <dl id="asset-detail-metrics" class="metric-list"></dl>
+              <div class="table-wrap flat"><table id="asset-history-table"></table></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="data" class="view">
+          <div class="page-grid">
+            <article class="card span-2">
+              <div class="section-head">
+                <div>
+                  <p class="eyebrow">本地数据库</p>
+                  <h2>数据库状态</h2>
+                  <p>Excel 刷新后，系统会把日报、信号、质检和运行审计写入本地 SQLite。</p>
+                </div>
+              </div>
+              <div id="db-status-grid" class="db-status-grid"></div>
+            </article>
+            <article class="card">
+              <h3>数据质检</h3>
+              <div class="table-wrap"><table id="quality-table"></table></div>
+            </article>
+            <article class="card">
+              <h3>源文件 Manifest</h3>
+              <div class="table-wrap"><table id="source-table"></table></div>
+            </article>
+            <article class="card span-2">
+              <h3>组合风控</h3>
+              <div class="table-wrap"><table id="risk-table"></table></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="agents" class="view">
+          <article class="card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">运行审计</p>
+                <h2>运行审计</h2>
+              </div>
+            </div>
+            <div class="table-wrap"><table id="agent-table"></table></div>
+          </article>
+        </section>
+
+        <section id="settings" class="view">
+          <div class="settings-grid">
+            <article class="card">
+              <h3>系统原则</h3>
+              <p class="plain-text">交易信号由确定性规则生成。问答、复核和日报解释只能读取上下文并解释，不允许新增标的或改写信号。</p>
+            </article>
+            <article class="card">
+              <div class="section-head compact">
+                <div>
+                  <h3>策略参数</h3>
+                  <p>保存后下一次刷新生效，历史报告不会被改写。</p>
+                </div>
+                <button id="save-params" class="button primary" type="button">保存参数</button>
+              </div>
+              <div id="params-status" class="plain-text">正在读取参数。</div>
+              <form id="params-form" class="params-form"></form>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./assets/app.js?v=20260701-modules-v1"></script>
+  </body>
+</html>

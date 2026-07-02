@@ -1,0 +1,12 @@
+{
+  "provider": "openai",
+  "primary_model": "gpt-5.5",
+  "economy_model": "gpt-5.4-mini",
+  "llm_enabled": true,
+  "daily_report_llm_enabled": false,
+  "usage_policy": {
+    "signals": "deterministic_code_only",
+    "explanations": "llm_optional",
+    "risk_summary": "llm_optional"
+  }
+}

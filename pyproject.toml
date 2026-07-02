@@ -1,0 +1,13 @@
+[project]
+name = "ai-research-superpower"
+version = "0.1.0"
+description = "Multi-agent AI research system for ETF, TL, and convertible bond daily workflows."
+requires-python = ">=3.11"
+dependencies = [
+  "pandas",
+  "openpyxl"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+

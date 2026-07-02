@@ -1,0 +1,5 @@
+{
+  "expected_min_symbols": 10,
+  "production_target_symbols": "30-50",
+  "current_sample_note": "当前样本仅包含14只ETF，第一版用于跑通系统框架。"
+}
