@@ -40,14 +40,14 @@ States:
 
 - 不做交易
 - 关注交易
-- 建议建仓
+- 模型触发建仓候选
 
 Core logic:
 
 - Weekly no-trade condition: red MACD histogram is shorter than the previous week, green histogram is longer than the previous week, or red turns green.
 - Weekly attention condition: red MACD histogram is longer than the previous week, green histogram is shorter than the previous week, or green turns red.
-- Weekly buy condition: weekly attention condition plus a KDJ J low below 20 within T-2 to T-1 weeks, and current weekly J is above that low.
-- Daily buy condition: daily attention condition plus a KDJ J low below 5 within T-3 to T-1 days, and current daily J is above that low.
+- Weekly entry-candidate condition: weekly attention condition plus a KDJ J low below 20 within T-2 to T-1 weeks, and current weekly J is above that low.
+- Daily entry-candidate condition: daily attention condition plus a KDJ J low below 5 within T-3 to T-1 days, and current daily J is above that low.
 - TL has no sell signal in phase one. The system assumes no existing TL position and only gives entry timing states.
 
 KDJ output wording:

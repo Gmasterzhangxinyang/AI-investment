@@ -168,7 +168,7 @@ class ChatOrchestrator:
         return (
             "你是机构投研系统中的受控 Chat Agent。"
             "你只能使用工具返回的证据包回答问题。"
-            "你不能新增标的、改写交易信号、承诺收益、替用户下单或生成不受规则支持的建议。"
+                "你不能新增标的、改写交易信号、承诺收益、替用户下单或生成不受规则支持的建仓候选。"
             "所有买入、建仓、平仓、关注、不做交易结论必须来自 EvidencePack 中的确定性字段，不能来自你的主观判断。"
             "如果规则字段与直觉冲突，必须服从规则字段。"
             "回答中文，专业、克制、可审计。"
@@ -282,14 +282,14 @@ class ChatOrchestrator:
                 "分析过程：1. 系统先把问题归为 ETF 规则解释类问题；"
                 "2. 读取 Daily summary、ETF signals、ETF watchlist 和 Rule contract；"
                 "3. 按客户规则核对建仓A和建仓B，不用模型自行发明交易逻辑；"
-                "4. 最后检查回答是否把关注池误写成建仓候选，或把未满足条件写成买入建议。\n\n"
+                "4. 最后检查回答是否把关注池误写成建仓候选，或把未满足条件写成建仓候选。\n\n"
                 f"关键规则：建仓A要求未持仓、MA5今日上穿MA10、MACD柱改善、量能倍数达到 {buy_volume}；"
                 f"建仓B要求未持仓、DIF上穿DEA、MA5高于MA10、收盘价高于MA20、量能倍数达到 {buy_volume}。"
                 "MA5高于MA20只能作为增强项，不能替代MA5上穿MA10。\n\n"
                 "关键证据：ETF signals 当前没有返回 buy_candidates；"
                 f"ETF watchlist 当前返回 {len(watchlist)} 条；"
                 f"ETF sell_alerts 当前返回 {len(sell_alerts)} 条。"
-                "因此系统不能给出ETF建仓建议，只能说当前没有满足完整建仓条件的标的。\n\n"
+                "因此系统不能给出ETF建仓候选，只能说当前没有满足完整建仓条件的标的。\n\n"
                 "限制与下一步：如果你刚修改过量能阈值或其他策略参数，需要点击一键刷新后，"
                 "建仓候选、关注池和日报才会按新参数重新计算。AI问答只解释当前已入库和当前配置证据，不改写信号。"
             )
@@ -468,7 +468,7 @@ class ChatOrchestrator:
             {"group": "TL", "label": "TL 周线 KDJ 窗口", "path": "tl.weekly_kdj_lookback", "aliases": ["周线kdj窗口", "tl周线窗口", "周线窗口"], "note": "检查最近几周是否出现过周线 J 低位。"},
             {"group": "TL", "label": "TL 周线 J 低位阈值", "path": "tl.weekly_j_low_threshold", "aliases": ["周线j阈值", "周线j低位", "tl周线j"], "note": "客户规则：周线近 N 周 J 小于该阈值后回升，才满足周线低位反弹条件。"},
             {"group": "TL", "label": "TL MACD 柱最小改善量", "path": "tl.macd_hist_min_delta", "aliases": ["macd柱最小改善", "macd改善量", "macd_hist_min_delta"], "note": "用于判断 MACD 柱是否改善；当前为 0，表示只要方向改善即可。"},
-            {"group": "TL", "label": "TL 周线不做交易硬否决", "path": "tl.weekly_no_trade_hard_veto", "aliases": ["周线硬否决", "周线不做交易硬否决", "硬否决"], "note": "开启后，周线满足不做交易条件时，日线信号不能升级为建议建仓。"},
+            {"group": "TL", "label": "TL 周线不做交易硬否决", "path": "tl.weekly_no_trade_hard_veto", "aliases": ["周线硬否决", "周线不做交易硬否决", "硬否决"], "note": "开启后，周线满足不做交易条件时，日线信号不能升级为建仓候选。"},
             {"group": "可转债风控", "label": "可转债最低价格", "path": "convertible_bond.min_price", "aliases": ["最低价格", "最低价", "100元以下"], "note": "低于该价格默认不进入普通排序，因为可能隐含信用风险。"},
             {"group": "可转债风控", "label": "可转债最高价格上限", "path": "convertible_bond.price_limit", "aliases": ["最高价格", "价格上限", "140"], "note": "高于或等于该价格不进入普通低估/性价比筛选。"},
             {"group": "可转债风控", "label": "可转债输出 TopN", "path": "convertible_bond.top_n", "aliases": ["topn", "top n", "输出数量", "top10", "top 10"], "note": "每日报告默认输出综合评分前 N 只。"},

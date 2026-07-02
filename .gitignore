@@ -37,9 +37,14 @@ outputs/*
 data/*.db
 data/*.db-*
 data/db_backups/
+*.sqlite
+*.sqlite3
+*.db
 
 # Source Excel snapshots and archives contain customer data.
 data/archive/
+data/current/
+data/wind/current/*
 data/wind/current/*.xlsx
 !data/wind/current/.gitkeep
 

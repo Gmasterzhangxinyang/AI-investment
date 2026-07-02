@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -8,6 +10,7 @@ from superpower.runtime.context import AgentContext
 from superpower.runtime.artifact_store import ArtifactStore
 from superpower.tools.excel_writer import write_workbook
 from superpower.tools.frame import agent_audit_frame, records
+from superpower.utils.text_safety import DISCLAIMER, sanitize_dashboard, sanitize_frame, scan_frame
 
 
 class Skill:
@@ -27,6 +30,7 @@ class Skill:
         tl_indicators = context.get("tl_indicators")
         cb_top10 = context.get("cb_top10")
         cb_ranked = context.get("cb_ranked")
+        cb_excluded = context.maybe("cb_excluded", pd.DataFrame())
         backtest_summary = context.get("backtest_summary")
         backtest_trades = context.get("backtest_trades")
         backtest_next_day_checks = _recent_next_day_checks(
@@ -46,30 +50,32 @@ class Skill:
         report_date = _report_date(context)
         dashboard = _dashboard_frame(report_date, etf_buys, etf_watchlist, etf_sells, tl_today, cb_top10, backtest_summary, quality, llm_usage)
         report_path = output_dir / f"AI投研日报-Superpower-{report_date}.xlsx"
-        write_workbook(
-            report_path,
-            {
-                "今日总览": dashboard,
-                "AI解释": research_summary,
-                "ETF建仓候选": etf_buys,
-                "ETF关注池": etf_watchlist,
-                "ETF详情近8日": etf_details,
-                "ETF平仓提示": etf_sells,
-                "ETF全量信号": etf_all,
-                "TL今日状态": tl_today,
-                "TL近期状态": tl_recent,
-                "可转债Top10": cb_top10,
-                "可转债全量排序": cb_ranked,
-                "历史诊断摘要": backtest_summary,
-                "ETF回测交易": backtest_trades,
-                "ETF次日验证近30日": backtest_next_day_checks,
-                "AI研究委员会": ai_committee_reviews,
-                "组合风控": risk,
-                "数据校验": quality,
-                "源文件Manifest": source_manifest,
-                "Agent审计": agent_audit,
-            },
-        )
+        workbook_sheets = {
+            "今日总览": dashboard,
+            "AI解释": research_summary,
+            "ETF建仓候选": etf_buys,
+            "ETF关注池": etf_watchlist,
+            "ETF详情近8日": etf_details,
+            "ETF平仓提示": etf_sells,
+            "ETF全量信号": etf_all,
+            "TL今日状态": tl_today,
+            "TL近期状态": tl_recent,
+            "可转债Top10": cb_top10,
+            "可转债全量排序": cb_ranked,
+            "可转债排除清单": cb_excluded,
+            "历史诊断摘要": backtest_summary,
+            "ETF回测交易": backtest_trades,
+            "短期方向诊断近30日": backtest_next_day_checks,
+            "AI研究委员会": ai_committee_reviews,
+            "组合风控": risk,
+            "数据校验": quality,
+            "源文件Manifest": source_manifest,
+            "Agent审计": agent_audit,
+        }
+        safety_scan = _text_safety_scan(workbook_sheets)
+        workbook_sheets["文本安全扫描"] = safety_scan
+        workbook_sheets = {name: sanitize_frame(frame) for name, frame in workbook_sheets.items()}
+        write_workbook(report_path, workbook_sheets)
 
         store = ArtifactStore(latest_dir)
         dashboard_payload = {
@@ -84,6 +90,7 @@ class Skill:
             "tlRecent": records(tl_recent),
             "cbTop10": records(cb_top10),
             "cbRanked": records(cb_ranked),
+            "cbExcluded": records(cb_excluded),
             "backtestSummary": records(backtest_summary),
             "backtestTrades": records(backtest_trades, limit=100),
             "backtestNextDayChecks": records(backtest_next_day_checks, limit=200),
@@ -96,9 +103,32 @@ class Skill:
             "llmUsage": llm_usage,
             "reportPath": str(report_path),
         }
+        dashboard_payload.update(
+            _stable_dashboard_schema(
+                context=context,
+                report_date=report_date,
+                dashboard=dashboard,
+                quality=quality,
+                etf_buys=etf_buys,
+                etf_watchlist=etf_watchlist,
+                etf_sells=etf_sells,
+                etf_all=etf_all,
+                tl_today=tl_today,
+                tl_recent=tl_recent,
+                cb_top10=cb_top10,
+                cb_ranked=cb_ranked,
+                cb_excluded=cb_excluded,
+                backtest_summary=backtest_summary,
+                backtest_next_day_checks=backtest_next_day_checks,
+                risk=risk,
+                llm_usage=llm_usage,
+                safety_scan=safety_scan,
+            )
+        )
         market_indicators = _market_indicator_records(etf_indicators, tl_indicators)
         market_indicators_path = store.save_json("market_indicators", {"rows": market_indicators})
         dashboard_payload["marketIndicatorsPath"] = str(market_indicators_path)
+        dashboard_payload = sanitize_dashboard(dashboard_payload)
         dashboard_path = store.save_json("dashboard", dashboard_payload)
 
         context.put("report_path", report_path)
@@ -108,14 +138,21 @@ class Skill:
             "report_path": str(report_path),
             "dashboard_json_path": str(dashboard_path),
             "market_indicators_json_path": str(market_indicators_path),
-            "sheets": 19,
+            "sheets": len(workbook_sheets),
         }
 
 
 def _report_date(context: AgentContext) -> str:
-    etf = context.get("etf_indicators")
-    tl = context.get("tl_indicators")
-    return max(etf["date"].max(), tl["date"].max()).strftime("%Y%m%d")
+    candidates: list[pd.Timestamp] = []
+    for key in ("etf_indicators", "tl_indicators", "cb_ranked"):
+        frame = context.maybe(key, pd.DataFrame())
+        if not frame.empty and "date" in frame.columns:
+            value = pd.to_datetime(frame["date"], errors="coerce").max()
+            if pd.notna(value):
+                candidates.append(pd.Timestamp(value))
+    if not candidates:
+        return datetime.now().strftime("%Y%m%d")
+    return max(candidates).strftime("%Y%m%d")
 
 
 def _dashboard_frame(
@@ -129,24 +166,26 @@ def _dashboard_frame(
     quality: pd.DataFrame,
     llm_usage: dict,
 ) -> pd.DataFrame:
-    tl_row = tl_today.iloc[0]
+    tl_row = tl_today.iloc[0] if not tl_today.empty else pd.Series(dtype=object)
     llm_status = _daily_report_llm_status(llm_usage)
     backtest_warns = int((backtest_summary["level"] == "WARN").sum()) if not backtest_summary.empty else 0
+    quality_warns = int((quality["status"] != "OK").sum()) if not quality.empty and "status" in quality.columns else 0
     return pd.DataFrame(
         [
+            {"item": "免责声明", "value": DISCLAIMER},
             {"item": "报告日期", "value": report_date},
             {"item": "ETF建仓候选数量", "value": len(buys)},
             {"item": "ETF关注池数量", "value": len(watchlist)},
             {"item": "ETF平仓提示数量", "value": len(sells)},
             {"item": "可转债Top10数量", "value": len(cb_top10)},
-            {"item": "TL今日状态", "value": tl_row["state"]},
-            {"item": "TL收盘价", "value": round(float(tl_row["收盘价"]), 4)},
-            {"item": "TL日线MACD柱", "value": round(float(tl_row["macd_hist"]), 6)},
-            {"item": "TL日线KDJ J", "value": round(float(tl_row["kdj_j"]), 4)},
+            {"item": "TL今日状态", "value": tl_row.get("display_status", tl_row.get("state", "数据不足，无法判断"))},
+            {"item": "TL收盘价", "value": _round_or_blank(tl_row.get("收盘价"), 4)},
+            {"item": "TL日线MACD柱", "value": _round_or_blank(tl_row.get("macd_hist"), 6)},
+            {"item": "TL日线KDJ J", "value": _round_or_blank(tl_row.get("kdj_j"), 4)},
             {"item": "回测诊断WARN数量", "value": backtest_warns},
             {"item": "日报解释状态", "value": llm_status},
             {"item": "日报解释模型", "value": llm_usage.get("llm_model", "未配置")},
-            {"item": "系统已识别风险项", "value": int((quality["status"] != "OK").sum())},
+            {"item": "系统已识别风险项", "value": quality_warns},
         ]
     )
 
@@ -158,6 +197,188 @@ def _daily_report_llm_status(llm_usage: dict) -> str:
     if reason == "daily_report_llm_disabled_for_refresh_stability":
         return "稳定模式（深度复核未启用）"
     return f"稳定模式（{reason}）"
+
+
+def _stable_dashboard_schema(
+    *,
+    context: AgentContext,
+    report_date: str,
+    dashboard: pd.DataFrame,
+    quality: pd.DataFrame,
+    etf_buys: pd.DataFrame,
+    etf_watchlist: pd.DataFrame,
+    etf_sells: pd.DataFrame,
+    etf_all: pd.DataFrame,
+    tl_today: pd.DataFrame,
+    tl_recent: pd.DataFrame,
+    cb_top10: pd.DataFrame,
+    cb_ranked: pd.DataFrame,
+    cb_excluded: pd.DataFrame,
+    backtest_summary: pd.DataFrame,
+    backtest_next_day_checks: pd.DataFrame,
+    risk: pd.DataFrame,
+    llm_usage: dict[str, Any],
+    safety_scan: pd.DataFrame,
+) -> dict[str, Any]:
+    quality_status = _overall_quality_status(quality)
+    risk_notes = _top_risk_notes(quality, risk, safety_scan)
+    return {
+        "run_info": {
+            "run_id": context.run_id,
+            "trade_date": report_date,
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "status": "success" if quality_status == "OK" else "partial_success",
+            "llm_enabled": bool(llm_usage.get("llm_used", False)),
+            "disclaimer": DISCLAIMER,
+        },
+        "data_quality": {
+            "overall_status": quality_status,
+            "checks": records(quality),
+            "errors": _quality_rows(quality, {"ERROR", "FAIL"}),
+            "warnings": _quality_rows(quality, {"WARN"}),
+        },
+        "etf": {
+            "status": _module_status(etf_all, quality, "ETF"),
+            "counts": {
+                "buy_candidates": len(etf_buys),
+                "watch": len(etf_watchlist),
+                "sell_alerts": len(etf_sells),
+                "all_signals": len(etf_all),
+            },
+            "buy_candidates": records(etf_buys),
+            "watchlist": records(etf_watchlist),
+            "sell_alerts": records(etf_sells),
+            "signals": records(etf_all),
+            "backtest_diagnostics": {
+                "label": "历史回测诊断",
+                "execution_assumption": "T日收盘后生成信号，T+1开盘模拟执行；未计入真实滑点、冲击成本、容量和税费差异。",
+                "summary": records(backtest_summary),
+                "short_term_direction_checks": records(backtest_next_day_checks, limit=200),
+            },
+        },
+        "tl": {
+            "status": _first_value(tl_today, "status", "unavailable"),
+            "display_status": _first_value(tl_today, "display_status", "数据不足，无法判断"),
+            "today": records(tl_today),
+            "recent": records(tl_recent, limit=30),
+            "note": "TL 当前仅做状态诊断，不模拟期货连续合约、换月、杠杆、保证金、滑点和完整平仓收益。",
+        },
+        "convertible_bond": {
+            "status": _module_status(cb_ranked, quality, "可转债"),
+            "counts": {
+                "top10": len(cb_top10),
+                "ranked_candidates": len(cb_ranked),
+                "excluded": len(cb_excluded),
+            },
+            "top10": records(cb_top10),
+            "ranked_candidates": records(cb_ranked, limit=100),
+            "excluded": records(cb_excluded, limit=200),
+            "industry_concentration_warning": _industry_warning(cb_top10),
+        },
+        "report_summary": {
+            "headline": _summary_headline(dashboard),
+            "key_metrics": records(dashboard),
+            "top_risk_notes": risk_notes[:3],
+            "text_safety": {
+                "status": "OK" if safety_scan.empty else "WARN",
+                "issues": records(safety_scan),
+            },
+        },
+    }
+
+
+def _text_safety_scan(sheets: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    issues: list[dict[str, object]] = []
+    for name, frame in sheets.items():
+        issues.extend(scan_frame(frame, name))
+    if not issues:
+        return pd.DataFrame(columns=["sheet", "row", "column", "phrases", "status", "note"])
+    out = pd.DataFrame(issues)
+    out["status"] = "WARN"
+    out["note"] = "已在最终输出中替换为保守口径"
+    return out
+
+
+def _overall_quality_status(quality: pd.DataFrame) -> str:
+    if quality.empty or "status" not in quality.columns:
+        return "WARN"
+    statuses = set(quality["status"].astype(str).str.upper())
+    if statuses & {"ERROR", "FAIL"}:
+        return "ERROR"
+    if "WARN" in statuses:
+        return "WARN"
+    return "OK"
+
+
+def _quality_rows(quality: pd.DataFrame, statuses: set[str]) -> list[dict[str, Any]]:
+    if quality.empty or "status" not in quality.columns:
+        return []
+    rows = quality[quality["status"].astype(str).str.upper().isin(statuses)]
+    return records(rows)
+
+
+def _module_status(frame: pd.DataFrame, quality: pd.DataFrame, label: str) -> str:
+    if frame.empty:
+        return "unavailable"
+    if not quality.empty and "item" in quality.columns and "status" in quality.columns:
+        related = quality[quality["item"].astype(str).str.contains(label, na=False)]
+        if related["status"].astype(str).str.upper().isin(["ERROR", "FAIL"]).any():
+            return "degraded"
+        if related["status"].astype(str).str.upper().eq("WARN").any():
+            return "degraded"
+    return "ok"
+
+
+def _top_risk_notes(quality: pd.DataFrame, risk: pd.DataFrame, safety_scan: pd.DataFrame) -> list[str]:
+    notes: list[str] = []
+    if not quality.empty:
+        for _, row in quality[quality["status"].astype(str) != "OK"].head(6).iterrows():
+            notes.append(f"{row.get('item')}：{row.get('detail')}。{row.get('note', '')}")
+    if not risk.empty:
+        for _, row in risk[risk["level"].astype(str).isin(["WARN", "ERROR"])].head(3).iterrows():
+            notes.append(f"{row.get('item')}：{row.get('value')}")
+    if not safety_scan.empty:
+        notes.append("文本安全扫描发现风险表述，已替换为保守口径")
+    return [str(note).strip() for note in notes if str(note).strip()]
+
+
+def _industry_warning(top10: pd.DataFrame) -> str:
+    if top10.empty or "sw_l1" not in top10.columns:
+        return "暂无可转债行业分散数据"
+    counts = top10["sw_l1"].fillna("未分类").astype(str).value_counts()
+    if counts.empty:
+        return "暂无可转债行业分散数据"
+    top_industry = counts.index[0]
+    top_count = int(counts.iloc[0])
+    if top_count >= 3:
+        return f"Top10中{top_industry}行业有{top_count}只，需关注行业集中度"
+    return "Top10行业集中度未触发明显警示"
+
+
+def _summary_headline(dashboard: pd.DataFrame) -> str:
+    values = {str(row["item"]): row["value"] for _, row in dashboard.iterrows()} if not dashboard.empty else {}
+    return (
+        f"ETF建仓候选{values.get('ETF建仓候选数量', 0)}个，"
+        f"ETF关注池{values.get('ETF关注池数量', 0)}个，"
+        f"TL为{values.get('TL今日状态', '数据不足，无法判断')}，"
+        f"可转债Top10为{values.get('可转债Top10数量', 0)}个。"
+    )
+
+
+def _first_value(frame: pd.DataFrame, column: str, default: Any) -> Any:
+    if frame.empty or column not in frame.columns:
+        return default
+    value = frame.iloc[0].get(column, default)
+    return default if pd.isna(value) else value
+
+
+def _round_or_blank(value: Any, digits: int) -> Any:
+    try:
+        if pd.isna(value):
+            return "--"
+        return round(float(value), digits)
+    except (TypeError, ValueError):
+        return "--"
 
 
 def _recent_next_day_checks(checks: pd.DataFrame, etf_indicators: pd.DataFrame, window: int = 30) -> pd.DataFrame:

@@ -322,7 +322,7 @@ raw_buy_signal =
 weekly_no_trade_hard_veto = true
 ```
 
-如果周线满足不做交易，则即使日线出现反弹，也不升级为建议建仓：
+如果周线满足不做交易，则即使日线出现反弹，也不升级为建仓候选：
 
 ```text
 buy_signal = raw_buy_signal and not no_trade_week
@@ -338,7 +338,7 @@ buy_signal = raw_buy_signal
 
 ```text
 if buy_signal:
-    state = "建议建仓"
+    state = "模型触发建仓候选"
 elif no_trade_week and not buy_signal:
     state = "不做交易"
 elif attention_week or daily_attention:
@@ -381,4 +381,3 @@ TL 页面输出：
 - 当前版本不模拟 TL 收益，因为客户规则没有给出完整平仓条件。
 - 周线 MACD 柱需要收盘后才能最终定长短；盘中只能作为观察，不应作为最终信号。
 - TL 状态是规则诊断，不等同于收益保证。
-

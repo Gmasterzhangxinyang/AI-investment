@@ -6,6 +6,7 @@ from superpower.runtime.context import AgentContext
 from superpower.tools.frame import records
 from superpower.tools.llm import generate_text
 from superpower.tools.text_cleaner import clean_llm_text
+from superpower.utils.text_safety import with_disclaimer
 
 
 EXPLANATION_LLM_TIMEOUT_SECONDS = 25
@@ -39,7 +40,7 @@ class Skill:
             llm_model = model_config.get("primary_model", "gpt-5.5")
             llm_reason = "daily_report_llm_disabled_for_refresh_stability"
             content_source = fallback_text
-        content = clean_llm_text(content_source)
+        content = with_disclaimer(clean_llm_text(content_source))
 
         summary = pd.DataFrame({"section": ["summary"], "content": [content]})
         context.put("research_summary", summary)
@@ -72,11 +73,11 @@ def deterministic_summary(
         f"ETF建仓候选 {len(buys)} 个，关注池 {len(watchlist)} 个，平仓提示 {len(sells)} 个。",
         f"TL日频状态为“{tl_state}”。",
         f"可转债Top10数量为 {len(cb_top10)} 个。",
-        "当前解释由确定性模板生成；配置开启且存在 OPENAI_API_KEY 后，将由大模型生成解释文本。",
+        "当前解释由确定性模板生成；配置开启且存在 OPENAI_API_KEY 后，可由大模型生成解释文本，但交易信号仍由规则代码生成。",
     ]
     if not buys.empty:
         top = buys.iloc[0]
-        lines.append(f"ETF候选中评分最高的是{top['name']}，触发因素：{top['signal_reason']}。")
+        lines.append(f"ETF建仓候选中评分最高的是{top['name']}，触发因素：{top['signal_reason']}。")
     if not watchlist.empty:
         top_watch = watchlist.iloc[0]
         lines.append(
@@ -85,7 +86,7 @@ def deterministic_summary(
         )
     if not sells.empty:
         top_sell = sells.iloc[0]
-        lines.append(f"当前持仓中需要重点关注{top_sell['name']}，触发因素：{top_sell['signal_reason']}。")
+        lines.append(f"当前持仓中触发平仓提示的是{top_sell['name']}，触发因素：{top_sell['signal_reason']}。")
     if not cb_top10.empty:
         top_cb = cb_top10.iloc[0]
         lines.append(f"可转债评分最高的是{top_cb['bond_name']}，评分{top_cb['score']}，原因：{top_cb['rank_reason']}。")

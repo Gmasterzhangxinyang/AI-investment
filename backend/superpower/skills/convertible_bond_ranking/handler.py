@@ -49,7 +49,29 @@ OUTPUT_COLUMNS = [
     "risk_level",
     "risk_flags",
     "rank_reason",
+    "score_breakdown",
+    "action",
+    "reason",
+    "metrics",
+    "rule_hits",
+    "risk_notes",
+    "confidence",
+    "data_quality",
     "notes",
+]
+
+EXCLUDED_COLUMNS = [
+    "date",
+    "bond_code",
+    "bond_name",
+    "price",
+    "ytm",
+    "conversion_premium_rate",
+    "bond_rating",
+    "sw_l1",
+    "remaining_size",
+    "redemption_status",
+    "excluded_reason",
 ]
 
 
@@ -61,9 +83,10 @@ class Skill:
             empty = _empty_output()
             context.put("cb_ranked", empty)
             context.put("cb_top10", empty)
+            context.put("cb_excluded", _empty_excluded())
             return {"cb_rows": 0, "cb_candidates": 0, "cb_top10": 0, "status": "waiting_for_data"}
 
-        ranked = rank_convertible_bonds(cb_data, params)
+        ranked, excluded = rank_convertible_bonds(cb_data, params, include_excluded=True)
         config = params.get("convertible_bond", {})
         top10 = _select_diversified_top(
             ranked,
@@ -73,15 +96,21 @@ class Skill:
         )
         context.put("cb_ranked", ranked)
         context.put("cb_top10", top10)
+        context.put("cb_excluded", excluded)
         return {
             "cb_rows": len(cb_data),
             "cb_candidates": len(ranked),
             "cb_top10": len(top10),
+            "cb_excluded": len(excluded),
             "status": "success" if not ranked.empty else "no_candidate_after_risk_filters",
         }
 
 
-def rank_convertible_bonds(cb_data: pd.DataFrame, params: dict[str, Any]) -> pd.DataFrame:
+def rank_convertible_bonds(
+    cb_data: pd.DataFrame,
+    params: dict[str, Any],
+    include_excluded: bool = False,
+) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """Rank v2 convertible-bond rows with risk gates before scoring.
 
     The model is intentionally deterministic: LLMs can explain these rows, but
@@ -127,7 +156,8 @@ def rank_convertible_bonds(cb_data: pd.DataFrame, params: dict[str, Any]) -> pd.
 
     df = _ensure_columns(cb_data.copy())
     if df.empty:
-        return _empty_output()
+        empty = _empty_output()
+        return (empty, _empty_excluded()) if include_excluded else empty
 
     report_date = _report_date(df)
     df["redemption_trigger_ratio_normalized"] = _normalise_trigger_ratio(df["redemption_trigger_ratio"])
@@ -166,9 +196,11 @@ def rank_convertible_bonds(cb_data: pd.DataFrame, params: dict[str, Any]) -> pd.
         )
         for _, row in df.iterrows()
     ]
+    excluded = _excluded_output(df)
     eligible = df[df["exclusion_reason"] == ""].copy()
     if eligible.empty:
-        return _empty_output()
+        empty = _empty_output()
+        return (empty, excluded) if include_excluded else empty
 
     eligible["growth_score"] = _fundamental_score(
         eligible,
@@ -225,6 +257,14 @@ def rank_convertible_bonds(cb_data: pd.DataFrame, params: dict[str, Any]) -> pd.
     ]
     eligible["risk_level"] = eligible["risk_flags"].map(_risk_level)
     eligible["rank_reason"] = [_rank_reason(row) for _, row in eligible.iterrows()]
+    eligible["score_breakdown"] = [_score_breakdown(row) for _, row in eligible.iterrows()]
+    eligible["action"] = "进入可转债Top10候选池"
+    eligible["reason"] = eligible["rank_reason"]
+    eligible["metrics"] = [_metrics(row) for _, row in eligible.iterrows()]
+    eligible["rule_hits"] = [_rule_hits(row) for _, row in eligible.iterrows()]
+    eligible["risk_notes"] = eligible["risk_flags"].fillna("").replace("", "无明显风控扣分项")
+    eligible["data_quality"] = "OK"
+    eligible["confidence"] = eligible["risk_level"].map({"低": "high", "中": "medium", "高": "low"}).fillna("medium")
 
     output = eligible[OUTPUT_COLUMNS].copy()
     output = output.sort_values(
@@ -232,7 +272,7 @@ def rank_convertible_bonds(cb_data: pd.DataFrame, params: dict[str, Any]) -> pd.
         ascending=[False, False, False, True],
     ).reset_index(drop=True)
     output["rank"] = np.arange(1, len(output) + 1)
-    return output
+    return (output, excluded) if include_excluded else output
 
 
 def _ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -638,6 +678,65 @@ def _risk_level(flags: str) -> str:
     return "中"
 
 
+def _score_breakdown(row: pd.Series) -> dict[str, float | None]:
+    return {
+        "fundamental": _safe_float(row.get("growth_score")),
+        "premium": _safe_float(row.get("premium_score")),
+        "ytm": _safe_float(row.get("ytm_score")),
+        "term": _safe_float(row.get("term_score")),
+        "credit": _safe_float(row.get("credit_score")),
+        "redemption": _safe_float(row.get("redemption_score")),
+        "scale": _safe_float(row.get("scale_score")),
+        "risk_penalty": _safe_float(row.get("risk_penalty")),
+        "total": _safe_float(row.get("score")),
+    }
+
+
+def _metrics(row: pd.Series) -> dict[str, float | str | None]:
+    return {
+        "price": _safe_float(row.get("price")),
+        "remaining_years": _safe_float(row.get("remaining_years")),
+        "conversion_premium_rate": _safe_float(row.get("conversion_premium_rate")),
+        "ytm": _safe_float(row.get("ytm")),
+        "bond_rating": None if pd.isna(row.get("bond_rating")) else str(row.get("bond_rating")),
+        "remaining_size": _safe_float(row.get("remaining_size")),
+        "deducted_profit_growth": _safe_float(row.get("deducted_profit_growth")),
+        "profit_growth_acceleration": _safe_float(row.get("profit_growth_acceleration")),
+        "profit_growth_25_vs_24": _safe_float(row.get("profit_growth_25_vs_24")),
+        "redemption_status": str(row.get("redemption_status", "")),
+    }
+
+
+def _rule_hits(row: pd.Series) -> str:
+    hits = [
+        "通过价格区间过滤",
+        f"强赎状态：{row.get('redemption_status', '未知')}",
+        f"债项评级：{row.get('bond_rating', '--')}",
+        f"行业：{row.get('sw_l1', '--')}",
+        "已计算基本面、溢价率、YTM、期限、信用、强赎、规模分项得分",
+    ]
+    return "；".join(hits)
+
+
+def _excluded_output(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "exclusion_reason" not in df.columns:
+        return _empty_excluded()
+    excluded = df[df["exclusion_reason"].astype(str).str.strip() != ""].copy()
+    if excluded.empty:
+        return _empty_excluded()
+    excluded["excluded_reason"] = excluded["exclusion_reason"]
+    return excluded[EXCLUDED_COLUMNS].sort_values(["excluded_reason", "bond_code"]).reset_index(drop=True)
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        if pd.isna(value):
+            return None
+        return round(float(value), 6)
+    except (TypeError, ValueError):
+        return None
+
+
 def _select_diversified_top(ranked: pd.DataFrame, top_n: int, max_per_l1: int, max_per_l2: int) -> pd.DataFrame:
     if ranked.empty:
         return _empty_output()
@@ -759,3 +858,7 @@ def _num(value: Any) -> float:
 
 def _empty_output() -> pd.DataFrame:
     return pd.DataFrame(columns=OUTPUT_COLUMNS)
+
+
+def _empty_excluded() -> pd.DataFrame:
+    return pd.DataFrame(columns=EXCLUDED_COLUMNS)

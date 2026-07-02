@@ -26,4 +26,4 @@ class QAAgent(SkillBackedAgent):
     )
 
     def evaluate_status(self, metrics: dict, context: AgentContext) -> AgentStatus:
-        return "warning" if metrics.get("warn_count", 0) else "success"
+        return "warning" if metrics.get("warn_count", 0) or metrics.get("fail_count", 0) else "success"

@@ -115,7 +115,25 @@ def _backtest_etf(etf: pd.DataFrame, params: dict[str, Any]) -> pd.DataFrame:
 
 
 def _next_day_signal_checks(etf: pd.DataFrame, params: dict[str, Any]) -> pd.DataFrame:
+    columns = [
+        "code",
+        "name",
+        "signal_type",
+        "signal_date",
+        "next_date",
+        "next_open",
+        "next_close",
+        "expected_direction",
+        "next_day_return",
+        "next_close_vs_signal_close",
+        "hit",
+        "result",
+        "reason",
+        "diagnostic_note",
+    ]
     checks: list[dict[str, Any]] = []
+    if etf.empty:
+        return pd.DataFrame(columns=columns)
     for (name, code), group in etf.groupby(["name", "code"]):
         g = group.sort_values("date").reset_index(drop=True)
         if len(g) < 62:
@@ -138,7 +156,7 @@ def _next_day_signal_checks(etf: pd.DataFrame, params: dict[str, Any]) -> pd.Dat
                         {
                             "code": code,
                             "name": name,
-                            "signal_type": "建仓",
+                            "signal_type": "模型触发建仓候选",
                             "signal_date": row["date"],
                             "next_date": next_row["date"],
                             "next_open": next_open,
@@ -147,7 +165,9 @@ def _next_day_signal_checks(etf: pd.DataFrame, params: dict[str, Any]) -> pd.Dat
                             "next_day_return": next_return,
                             "next_close_vs_signal_close": next_close_vs_signal_close,
                             "hit": bool(pd.notna(next_return) and next_return > 0),
+                            "result": "对" if bool(pd.notna(next_return) and next_return > 0) else "错",
                             "reason": "；".join(reasons),
+                            "diagnostic_note": "短期方向诊断：T日收盘后出信号，T+1开盘执行，观察T+1开盘到收盘方向。",
                         }
                     )
                     in_position = True
@@ -156,24 +176,26 @@ def _next_day_signal_checks(etf: pd.DataFrame, params: dict[str, Any]) -> pd.Dat
             exit_reasons = _sell_reasons(row, params)
             if exit_reasons:
                 checks.append(
-                    {
-                        "code": code,
-                        "name": name,
-                        "signal_type": "平仓",
-                        "signal_date": row["date"],
-                        "next_date": next_row["date"],
-                        "next_open": next_open,
-                        "next_close": next_close,
-                        "expected_direction": "下跌",
-                        "next_day_return": next_return,
-                        "next_close_vs_signal_close": next_close_vs_signal_close,
-                        "hit": bool(pd.notna(next_return) and next_return < 0),
-                        "reason": "；".join(exit_reasons),
-                    }
-                )
+                        {
+                            "code": code,
+                            "name": name,
+                            "signal_type": "模型触发平仓提示",
+                            "signal_date": row["date"],
+                            "next_date": next_row["date"],
+                            "next_open": next_open,
+                            "next_close": next_close,
+                            "expected_direction": "下跌",
+                            "next_day_return": next_return,
+                            "next_close_vs_signal_close": next_close_vs_signal_close,
+                            "hit": bool(pd.notna(next_return) and next_return < 0),
+                            "result": "对" if bool(pd.notna(next_return) and next_return < 0) else "错",
+                            "reason": "；".join(exit_reasons),
+                            "diagnostic_note": "短期方向诊断：T日收盘后出信号，T+1开盘执行，观察T+1开盘到收盘方向。",
+                        }
+                    )
                 in_position = False
 
-    return pd.DataFrame(checks)
+    return pd.DataFrame(checks, columns=columns)
 
 
 def _summary(
@@ -191,8 +213,8 @@ def _summary(
     best_return = float(closed["net_return"].max()) if trade_count else np.nan
     worst_return = float(closed["net_return"].min()) if trade_count else np.nan
     avg_holding_days = float(closed["holding_days"].mean()) if trade_count else np.nan
-    buy_checks = next_day_checks[next_day_checks["signal_type"] == "建仓"] if not next_day_checks.empty else pd.DataFrame()
-    sell_checks = next_day_checks[next_day_checks["signal_type"] == "平仓"] if not next_day_checks.empty else pd.DataFrame()
+    buy_checks = next_day_checks[next_day_checks["signal_type"] == "模型触发建仓候选"] if not next_day_checks.empty else pd.DataFrame()
+    sell_checks = next_day_checks[next_day_checks["signal_type"] == "模型触发平仓提示"] if not next_day_checks.empty else pd.DataFrame()
     buy_next_day_count = len(buy_checks)
     sell_next_day_count = len(sell_checks)
     buy_next_day_hit_rate = float(buy_checks["hit"].mean()) if buy_next_day_count else np.nan
@@ -203,9 +225,9 @@ def _summary(
     history_note = "样本可用于初步回测" if history_days >= 750 else "历史不足，当前仅可做流程和信号频率诊断"
 
     rows = [
-        {"item": "ETF回测标的数", "value": symbol_count, "level": "INFO", "note": ""},
+        {"item": "ETF历史回测诊断标的数", "value": symbol_count, "level": "INFO", "note": "历史回测诊断不构成收益承诺"},
         {"item": "ETF历史交易日", "value": history_days, "level": history_level, "note": history_note},
-        {"item": "ETF闭合交易次数", "value": trade_count, "level": "INFO", "note": "信号日收盘后生成，下一交易日开盘模拟成交"},
+        {"item": "ETF闭合交易次数", "value": trade_count, "level": "INFO", "note": "T日收盘后生成信号，T+1开盘模拟成交"},
         {"item": "ETF胜率", "value": win_rate, "level": "INFO", "note": ""},
         {"item": "ETF单笔平均收益", "value": avg_return, "level": "INFO", "note": "已扣双边千一费用假设"},
         {"item": "ETF最好单笔收益", "value": best_return, "level": "INFO", "note": ""},
@@ -215,7 +237,7 @@ def _summary(
             "item": "ETF建仓次日样本数",
             "value": buy_next_day_count,
             "level": "INFO",
-            "note": "信号日收盘后生成，验证T+1开盘到收盘是否上涨",
+            "note": "短期方向诊断：T日收盘信号，T+1开盘执行，验证T+1开盘到收盘是否上涨",
         },
         {"item": "ETF建仓次日上涨命中率", "value": buy_next_day_hit_rate, "level": "INFO", "note": ""},
         {"item": "ETF建仓次日平均收益", "value": buy_next_day_avg_return, "level": "INFO", "note": "T+1开盘到收盘"},
@@ -223,15 +245,15 @@ def _summary(
             "item": "ETF平仓次日样本数",
             "value": sell_next_day_count,
             "level": "INFO",
-            "note": "仅统计模拟持仓中触发的平仓信号，验证T+1开盘到收盘是否下跌",
+            "note": "短期方向诊断：仅统计模拟持仓中触发的平仓提示，验证T+1开盘到收盘是否下跌",
         },
         {"item": "ETF平仓次日下跌命中率", "value": sell_next_day_hit_rate, "level": "INFO", "note": ""},
         {"item": "ETF平仓次日平均收益", "value": sell_next_day_avg_return, "level": "INFO", "note": "负数表示平仓后次日下跌"},
         {
-            "item": "TL建议建仓信号次数",
-            "value": int((tl_history["state"] == "建议建仓").sum()) if not tl_history.empty else 0,
+            "item": "TL建仓候选信号次数",
+            "value": int((tl_history["status"] == "entry_candidate").sum()) if not tl_history.empty and "status" in tl_history.columns else 0,
             "level": "INFO",
-            "note": "TL第一版只做状态诊断，不模拟平仓收益",
+            "note": "TL 当前仅做状态诊断，不模拟期货连续合约、换月、杠杆、保证金、滑点和完整平仓收益",
         },
         {
             "item": "TL不做交易天数",

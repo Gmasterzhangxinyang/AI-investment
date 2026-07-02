@@ -14,28 +14,35 @@ class Skill:
         cb = context.maybe("cb_data", pd.DataFrame())
         positions = context.maybe("positions", pd.DataFrame())
         source_manifest = context.maybe("source_manifest", pd.DataFrame())
+        ingestion_warnings = context.maybe("data_ingestion_warnings", pd.DataFrame())
         etf_template_universe = context.maybe("etf_template_universe", pd.DataFrame())
         universe = context.maybe("universe", context.maybe("universe_config", {}))
         min_symbols = int(universe.get("expected_min_symbols", 1))
 
-        etf_symbols = etf[["name", "code"]].drop_duplicates().shape[0]
-        etf_days = int(etf["date"].nunique())
-        tl_days = int(tl["date"].nunique())
-        etf_latest = etf["date"].max()
-        tl_latest = tl["date"].max()
+        etf_symbols = etf[["name", "code"]].drop_duplicates().shape[0] if {"name", "code"}.issubset(etf.columns) else 0
+        etf_days = int(etf["date"].nunique()) if "date" in etf.columns else 0
+        tl_days = int(tl["date"].nunique()) if "date" in tl.columns else 0
+        etf_latest = etf["date"].max() if "date" in etf.columns and not etf.empty else pd.NaT
+        tl_latest = tl["date"].max() if "date" in tl.columns and not tl.empty else pd.NaT
         today = pd.Timestamp(datetime.now().date())
 
         checks: list[dict[str, object]] = []
         checks.extend(_source_checks(source_manifest))
+        checks.extend(_ingestion_warning_checks(ingestion_warnings))
         checks.extend(
             [
-                _check("ETF有效标的数", "FAIL" if etf_symbols < min_symbols else "OK", etf_symbols, f"最低要求{min_symbols}"),
+                _check("ETF有效标的数", "ERROR" if etf_symbols < min_symbols else "OK", etf_symbols, f"最低要求{min_symbols}"),
                 _check("ETF目标标的范围", "WARN" if etf_symbols < 30 else "OK", etf_symbols, "客户目标30-50只；当前少于30只时可先跑，但不建议视作完整覆盖"),
                 _check("ETF有效交易日", _history_status(etf_days), etf_days, "正式回测建议至少3-5年，当前少于120日只适合流程验证"),
-                _check("ETF最新日期", _freshness_status(etf_latest, today), str(etf_latest.date()), "若不是上一交易日附近，需确认 Wind 是否刷新"),
+                _check("ETF最新日期", _freshness_status(etf_latest, today), _date_text(etf_latest), "若不是上一交易日附近，需确认 Wind 是否刷新"),
                 _check("TL有效交易日", _history_status(tl_days), tl_days, "正式回测建议至少3-5年，当前少于120日只适合流程验证"),
-                _check("TL最新日期", _freshness_status(tl_latest, today), str(tl_latest.date()), "若不是上一交易日附近，需确认 Wind 是否刷新"),
-                _check("ETF/TL最新日期一致", "WARN" if etf_latest.date() != tl_latest.date() else "OK", f"ETF={etf_latest.date()} TL={tl_latest.date()}", "两者不一致时报告仍可出，但需人工复核"),
+                _check("TL最新日期", _freshness_status(tl_latest, today), _date_text(tl_latest), "若不是上一交易日附近，需确认 Wind 是否刷新"),
+                _check(
+                    "ETF/TL最新日期一致",
+                    "WARN" if _date_text(etf_latest) != _date_text(tl_latest) else "OK",
+                    f"ETF={_date_text(etf_latest)} TL={_date_text(tl_latest)}",
+                    "两者不一致时报告仍可出，但需人工复核",
+                ),
             ]
         )
         checks.extend(_required_field_checks("ETF", etf, ["开盘价", "收盘价", "最低价", "最高价", "成交量（万股）"]))
@@ -46,10 +53,8 @@ class Skill:
         checks.extend(_cb_checks(cb))
 
         report = pd.DataFrame(checks)
-        fail_count = int((report["status"] == "FAIL").sum())
+        fail_count = int(report["status"].isin(["FAIL", "ERROR"]).sum())
         context.put("data_quality_report", report)
-        if fail_count:
-            raise ValueError(f"Data quality gate failed: {fail_count} critical failures")
         return {
             "checks": len(report),
             "fail_count": fail_count,
@@ -70,7 +75,7 @@ def _source_checks(source_manifest: pd.DataFrame) -> list[dict[str, object]]:
     for _, row in source_manifest.iterrows():
         source_type = row.get("source_type", "UNKNOWN")
         exists = bool(row.get("exists", False))
-        status = "OK" if exists else ("WARN" if source_type == "CB" else "FAIL")
+        status = "OK" if exists else ("WARN" if source_type == "CB" else "ERROR")
         checks.append(
             _check(
                 f"{source_type}源文件",
@@ -82,9 +87,26 @@ def _source_checks(source_manifest: pd.DataFrame) -> list[dict[str, object]]:
     return checks
 
 
+def _ingestion_warning_checks(warnings: pd.DataFrame) -> list[dict[str, object]]:
+    if warnings.empty:
+        return []
+    checks = []
+    for _, row in warnings.iterrows():
+        module = row.get("module", "UNKNOWN")
+        checks.append(
+            _check(
+                f"{module}数据接入",
+                str(row.get("status", "ERROR")),
+                row.get("message", ""),
+                str(row.get("path", "")),
+            )
+        )
+    return checks
+
+
 def _history_status(days: int) -> str:
     if days < 60:
-        return "FAIL"
+        return "ERROR"
     if days < 120:
         return "WARN"
     return "OK"
@@ -92,20 +114,26 @@ def _history_status(days: int) -> str:
 
 def _freshness_status(latest: pd.Timestamp, today: pd.Timestamp) -> str:
     if pd.isna(latest):
-        return "FAIL"
+        return "ERROR"
     age_days = int((today - pd.Timestamp(latest.date())).days)
     return "WARN" if age_days > 5 else "OK"
 
 
+def _date_text(value: pd.Timestamp) -> str:
+    if pd.isna(value):
+        return "暂无"
+    return str(pd.Timestamp(value).date())
+
+
 def _required_field_checks(label: str, frame: pd.DataFrame, required: list[str]) -> list[dict[str, object]]:
     missing = [col for col in required if col not in frame.columns]
-    return [_check(f"{label}必要字段", "FAIL" if missing else "OK", "缺失：" + ",".join(missing) if missing else "齐全")]
+    return [_check(f"{label}必要字段", "ERROR" if missing else "OK", "缺失：" + ",".join(missing) if missing else "齐全")]
 
 
 def _market_value_checks(label: str, frame: pd.DataFrame, volume_field: str) -> list[dict[str, object]]:
     checks: list[dict[str, object]] = []
     if frame.empty:
-        return [_check(f"{label}行情行数", "FAIL", 0)]
+        return [_check(f"{label}行情行数", "ERROR", 0, "该模块不可用或没有有效交易行")]
     duplicates = int(frame.duplicated(["date", "code"]).sum())
     checks.append(_check(f"{label}日期代码重复行", "WARN" if duplicates else "OK", duplicates))
     for col in ["开盘价", "收盘价", "最低价", "最高价", volume_field]:
@@ -113,8 +141,14 @@ def _market_value_checks(label: str, frame: pd.DataFrame, volume_field: str) -> 
             continue
         missing = int(frame[col].isna().sum())
         checks.append(_check(f"{label}{col}空值", "WARN" if missing else "OK", missing))
-    negative_price_rows = int(((frame["开盘价"] <= 0) | (frame["收盘价"] <= 0)).sum())
-    checks.append(_check(f"{label}非正价格行", "FAIL" if negative_price_rows else "OK", negative_price_rows))
+    if {"开盘价", "收盘价"}.issubset(frame.columns):
+        negative_price_rows = int(((frame["开盘价"] <= 0) | (frame["收盘价"] <= 0)).sum())
+    else:
+        negative_price_rows = len(frame)
+    checks.append(_check(f"{label}非正价格行", "ERROR" if negative_price_rows else "OK", negative_price_rows))
+    if volume_field in frame.columns:
+        zero_volume_rows = int((pd.to_numeric(frame[volume_field], errors="coerce").fillna(0) <= 0).sum())
+        checks.append(_check(f"{label}零成交量行", "WARN" if zero_volume_rows else "OK", zero_volume_rows, "零成交量行不进入指标均量计算"))
     return checks
 
 

@@ -11,12 +11,12 @@
   - 输出建仓候选、平仓提示、关注池和全量信号表。
   - 建仓条件围绕 MA5/MA10、MACD、前 60 日量能倍数。
   - 平仓条件围绕跌破 MA5/MA10 与放量确认。
-  - 支持完整交易生命周期回测，以及最近 30 个交易日“次日方向验证”。
+  - 支持完整交易生命周期历史诊断，以及最近 30 个交易日“短期方向诊断”。
 
 - **TL 日频择时**
   - 读取 30 年国债期货 TL 日频行情。
   - 按客户规则计算日线/周线 MACD 柱变化和 KDJ 低位反弹。
-  - 输出“不做交易 / 关注交易 / 建议建仓 / 中性”状态。
+  - 输出“不做交易 / 关注交易 / 模型触发建仓候选 / 中性”状态。
   - 当前第一版只做状态诊断，不模拟 TL 平仓收益。
 
 - **可转债筛选与打分**
@@ -41,11 +41,18 @@
 
 | 板块 | 文档 | 当前模型定位 | 核心输出 |
 | --- | --- | --- | --- |
-| ETF | [ETF 判断逻辑、模型与公式](docs/ETF_MODEL.md) | 日频规则模型，围绕 MA5/MA10、MACD、前 60 日量能和客户持仓状态生成信号 | 建仓候选、平仓提示、关注池、次日验证、完整交易回测 |
-| TL | [TL 判断逻辑、模型与公式](docs/TL_MODEL.md) | 30 年国债期货 TL 日频状态诊断，围绕周线/日线 MACD 柱变化和 KDJ 低位反弹 | 不做交易、关注交易、建议建仓、中性 |
+| ETF | [ETF 判断逻辑、模型与公式](docs/ETF_MODEL.md) | 日频规则模型，围绕 MA5/MA10、MACD、前 60 日量能和客户持仓状态生成信号 | 建仓候选、平仓提示、关注池、短期方向诊断、完整交易历史诊断 |
+| TL | [TL 判断逻辑、模型与公式](docs/TL_MODEL.md) | 30 年国债期货 TL 日频状态诊断，围绕周线/日线 MACD 柱变化和 KDJ 低位反弹 | 不做交易、关注交易、模型触发建仓候选、中性 |
 | 可转债 | [可转债判断逻辑、模型与公式](docs/CONVERTIBLE_BOND_MODEL.md) | 先风险过滤再综合打分，重点纳入强赎、信用、YTM、溢价率、基本面增长和行业分散 | Top10、候选池全量排序、风险提示、评分依据 |
 
 > 三个板块均为确定性规则模型。AI 只读取这些规则和系统证据进行解释、复核和问答，不直接产生交易信号。
+
+## 稳定交付文档
+
+- [交付加固说明](docs/DELIVERY_HARDENING.md)
+- [Dashboard 稳定数据契约](docs/DASHBOARD_SCHEMA.md)
+- [报告话术与合规口径](docs/REPORTING_POLICY.md)
+- [数据质量规则](docs/DATA_QUALITY_RULES.md)
 
 ## 产品界面
 
@@ -59,7 +66,7 @@ http://127.0.0.1:8766/frontend/
 
 - **投研问答**：和 AI 交互，读取当前所有日报、信号、参数和数据库上下文。
 - **每日报告**：今日结论、关键 KPI、直达入口、复核意见。
-- **ETF**：ETF 建仓、平仓、关注池、近 30 交易日次日验证、完整交易回测。
+- **ETF**：ETF 建仓候选、平仓提示、关注池、近 30 交易日短期方向诊断、完整交易历史诊断。
 - **TL**：TL 今日状态、近期状态、历史状态诊断。
 - **可转债**：Top10、候选池全量排序、可转债质检与风险。
 - **标的档案**：查询 ETF、TL、可转债详情。没有进入当前候选池的转债会明确显示原因，不再空白。
@@ -109,7 +116,7 @@ flowchart TD
     F --> G["ETFAgent<br/>建仓 / 平仓 / 关注池"]
     F --> H["TLAgent<br/>不做交易 / 关注 / 建仓"]
     F --> I["ConvertibleBondAgent<br/>风险过滤 / 打分 / Top10"]
-    G --> J["BacktestAgent<br/>完整交易回测 + 次日验证"]
+    G --> J["BacktestAgent<br/>历史回测诊断 + 短期方向诊断"]
     H --> J
     I --> K["RiskAgent<br/>组合层风险摘要"]
     J --> K
@@ -131,7 +138,7 @@ flowchart LR
     ETF --> Dashboard["dashboard.json"]
     TL --> Dashboard
     CB --> Dashboard
-    ETF --> Backtest["Backtest<br/>完整交易 + 次日方向验证"]
+    ETF --> Backtest["Backtest<br/>历史交易 + 短期方向诊断"]
     Backtest --> Dashboard
 
     Dashboard --> SQLite["SQLite<br/>data/research.db"]
@@ -165,6 +172,17 @@ Daily Workflow
   ├── AIResearchCommitteeAgent
   ├── ExplanationAgent
   └── ReportAgent
+```
+
+Dashboard 固定输出契约：
+
+```text
+run_info
+data_quality
+etf
+tl
+convertible_bond
+report_summary
 ```
 
 ### Agent
@@ -220,7 +238,7 @@ Tool 是底层工具层，例如：
 - T 日收盘后产生信号。
 - T+1 开盘价模拟成交。
 - 完整交易回测统计持仓周期收益、胜率、平均收益、最差收益。
-- 次日验证统计 T+1 开盘到收盘方向是否符合预期。
+- 短期方向诊断统计 T+1 开盘到收盘方向是否符合预期。
 
 ### TL
 
@@ -239,7 +257,7 @@ Tool 是底层工具层，例如：
 
 - `不做交易`
 - `关注交易`
-- `建议建仓`
+- `模型触发建仓候选`
 - `中性`
 
 ### 可转债

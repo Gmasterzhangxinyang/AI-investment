@@ -7,6 +7,40 @@ import pandas as pd
 
 from superpower.runtime.context import AgentContext
 
+SIGNAL_COLUMNS = [
+    "date",
+    "code",
+    "name",
+    "position_status",
+    "signal_type",
+    "action",
+    "display_action",
+    "reason",
+    "metrics",
+    "rule_hits",
+    "risk_notes",
+    "confidence",
+    "data_quality",
+    "close",
+    "ma5",
+    "ma10",
+    "ma20",
+    "ma60",
+    "vol_ratio60",
+    "macd_hist",
+    "ma5_ma10_signal",
+    "ma5_ma20_status",
+    "volume_check",
+    "watch_type",
+    "missing_condition",
+    "suggested_action",
+    "share_change",
+    "buy_signal",
+    "sell_signal",
+    "signal_reason",
+    "score",
+]
+
 
 class Skill:
     def run(self, context: AgentContext) -> dict[str, object]:
@@ -42,6 +76,9 @@ def latest_etf_signals(
     for (name, code), group in etf.groupby(["name", "code"]):
         g = group.sort_values("date").reset_index(drop=True)
         if len(g) < 61:
+            if not g.empty:
+                row = g.iloc[-1]
+                rows.append(_unavailable_row(row, code, name, len(g), code in holding_codes))
             continue
 
         row = g.iloc[-1]
@@ -52,6 +89,14 @@ def latest_etf_signals(
         ma5_ma20_status = _ma5_ma20_status(row)
         volume_check = _volume_check(row, params["etf"]["buy_volume_ratio_min"])
         watch_type, missing_condition, suggested_action = _watchlist_diagnosis(row, prev, params)
+        buy_signal = bool(buy_reasons) and code not in holding_codes
+        sell_signal = bool(sell_reasons) and code in holding_codes
+        signal_type = _signal_type(buy_signal, sell_signal, watch_type)
+        action = _action_text(signal_type)
+        risk_notes = _risk_notes(row, prev, signal_type, watch_type)
+        data_quality = "OK" if pd.notna(row.get("vol_ratio60")) else "WARN"
+        confidence = _confidence(data_quality, signal_type, row)
+        reason = "；".join(buy_reasons + sell_reasons) or watch_type or "未触发完整规则条件"
 
         rows.append(
             {
@@ -59,6 +104,15 @@ def latest_etf_signals(
                 "code": code,
                 "name": name,
                 "position_status": "持仓中" if code in holding_codes else "未持仓/已平仓",
+                "signal_type": signal_type,
+                "action": action,
+                "display_action": action,
+                "reason": reason,
+                "metrics": _metrics(row),
+                "rule_hits": _rule_hits(buy_reasons, sell_reasons, watch_type, missing_condition),
+                "risk_notes": risk_notes,
+                "confidence": confidence,
+                "data_quality": data_quality,
                 "close": row["收盘价"],
                 "ma5": row["ma5"],
                 "ma10": row["ma10"],
@@ -73,9 +127,9 @@ def latest_etf_signals(
                 "missing_condition": missing_condition,
                 "suggested_action": suggested_action,
                 "share_change": row.get("份额变化（亿份）", np.nan),
-                "buy_signal": bool(buy_reasons) and code not in holding_codes,
-                "sell_signal": bool(sell_reasons) and code in holding_codes,
-                "signal_reason": "；".join(buy_reasons + sell_reasons) or "未触发",
+                "buy_signal": buy_signal,
+                "sell_signal": sell_signal,
+                "signal_reason": reason,
                 "score": score_etf(row, params),
             }
         )
@@ -97,7 +151,7 @@ def latest_etf_signals(
                 }
             )
 
-    signal_table = pd.DataFrame(rows)
+    signal_table = pd.DataFrame(rows, columns=SIGNAL_COLUMNS)
     if signal_table.empty:
         return signal_table, signal_table.copy(), signal_table.copy(), signal_table.copy(), pd.DataFrame(detail_rows)
 
@@ -111,6 +165,43 @@ def latest_etf_signals(
         & (signal_table["watch_type"] != "")
     ].copy().sort_values("score", ascending=False)
     return signal_table, buys, sells, watchlist, pd.DataFrame(detail_rows)
+
+
+def _unavailable_row(row: pd.Series, code: str, name: str, history_rows: int, is_holding: bool) -> dict[str, Any]:
+    reason = f"有效历史仅{history_rows}行，少于61行，不能计算完整MA60/量能确认"
+    return {
+        "date": row["date"].date() if pd.notna(row.get("date")) else "",
+        "code": code,
+        "name": name,
+        "position_status": "持仓中" if is_holding else "未持仓/已平仓",
+        "signal_type": "data_unavailable",
+        "action": "数据不足，无法判断",
+        "display_action": "数据不足，无法判断",
+        "reason": reason,
+        "metrics": _metrics(row),
+        "rule_hits": "",
+        "risk_notes": reason,
+        "confidence": "low",
+        "data_quality": "ERROR",
+        "close": row.get("收盘价", np.nan),
+        "ma5": row.get("ma5", np.nan),
+        "ma10": row.get("ma10", np.nan),
+        "ma20": row.get("ma20", np.nan),
+        "ma60": row.get("ma60", np.nan),
+        "vol_ratio60": row.get("vol_ratio60", np.nan),
+        "macd_hist": row.get("macd_hist", np.nan),
+        "ma5_ma10_signal": "历史不足",
+        "ma5_ma20_status": "历史不足",
+        "volume_check": "量能历史不足",
+        "watch_type": "",
+        "missing_condition": reason,
+        "suggested_action": "补足历史后再判断",
+        "share_change": row.get("份额变化（亿份）", np.nan),
+        "buy_signal": False,
+        "sell_signal": False,
+        "signal_reason": reason,
+        "score": 0.0,
+    }
 
 
 def _buy_reasons(row: pd.Series, prev: pd.Series, params: dict[str, Any]) -> list[str]:
@@ -195,6 +286,89 @@ def _watchlist_diagnosis(row: pd.Series, prev: pd.Series, params: dict[str, Any]
     if trend_strong and macd_improving and not volume_ok:
         return "趋势改善，量能未确认", _volume_check(row, threshold), "跟踪，不追高，等待再次放量"
     return "", "", ""
+
+
+def _signal_type(buy_signal: bool, sell_signal: bool, watch_type: str) -> str:
+    if buy_signal:
+        return "buy_candidate"
+    if sell_signal:
+        return "sell_alert"
+    if watch_type:
+        return "watch"
+    return "neutral"
+
+
+def _action_text(signal_type: str) -> str:
+    mapping = {
+        "buy_candidate": "模型触发建仓候选",
+        "sell_alert": "模型触发平仓提示",
+        "watch": "进入观察池",
+        "neutral": "未触发",
+        "data_unavailable": "数据不足，无法判断",
+    }
+    return mapping.get(signal_type, "未触发")
+
+
+def _metrics(row: pd.Series) -> dict[str, Any]:
+    return {
+        "close": _safe_float(row.get("收盘价")),
+        "ma5": _safe_float(row.get("ma5")),
+        "ma10": _safe_float(row.get("ma10")),
+        "ma20": _safe_float(row.get("ma20")),
+        "ma60": _safe_float(row.get("ma60")),
+        "vol_ratio60": _safe_float(row.get("vol_ratio60")),
+        "macd_hist": _safe_float(row.get("macd_hist")),
+        "dif": _safe_float(row.get("dif")),
+        "dea": _safe_float(row.get("dea")),
+    }
+
+
+def _rule_hits(buy_reasons: list[str], sell_reasons: list[str], watch_type: str, missing_condition: str) -> str:
+    hits = buy_reasons + sell_reasons
+    if watch_type:
+        hits.append(watch_type)
+    if missing_condition:
+        hits.append(f"未满足：{missing_condition}")
+    return "；".join(hits)
+
+
+def _risk_notes(row: pd.Series, prev: pd.Series, signal_type: str, watch_type: str) -> str:
+    notes: list[str] = []
+    ma5_cross_ma10 = (
+        pd.notna(prev.get("ma5"))
+        and pd.notna(prev.get("ma10"))
+        and pd.notna(row.get("ma5"))
+        and pd.notna(row.get("ma10"))
+        and prev["ma5"] <= prev["ma10"]
+        and row["ma5"] > row["ma10"]
+    )
+    macd_improving = pd.notna(row.get("macd_hist")) and pd.notna(prev.get("macd_hist")) and row["macd_hist"] > prev["macd_hist"]
+    if ma5_cross_ma10 and not macd_improving:
+        notes.append("均线触发但MACD未确认")
+    if watch_type:
+        notes.append("关注池不等于建仓候选，需等待缺失条件确认")
+    if signal_type == "neutral":
+        notes.append("未触发完整建仓或平仓规则")
+    return "；".join(notes)
+
+
+def _confidence(data_quality: str, signal_type: str, row: pd.Series) -> str:
+    if data_quality == "ERROR":
+        return "low"
+    if data_quality == "WARN" or pd.isna(row.get("vol_ratio60")):
+        return "low"
+    if signal_type in {"watch", "neutral"}:
+        return "medium"
+    return "high"
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        if pd.isna(value):
+            return None
+        return round(float(value), 6)
+    except (TypeError, ValueError):
+        return None
 
 
 def _sell_reasons(row: pd.Series, params: dict[str, Any]) -> list[str]:

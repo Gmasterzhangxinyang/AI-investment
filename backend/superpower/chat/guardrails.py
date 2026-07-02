@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from superpower.tools.text_cleaner import clean_llm_text
+from superpower.utils.text_safety import BANNED_PHRASES, sanitize_text
 
 from .schemas import ChatIntent, GuardrailResult, ToolResult
 
@@ -15,6 +16,7 @@ class ChatGuardrails:
         r"一定(?:买入|卖出|上涨|盈利)",
         r"无风险",
     ]
+    forbidden_phrases = BANNED_PHRASES
 
     def validate_input(self, question: str) -> GuardrailResult:
         text = question.strip()
@@ -26,11 +28,14 @@ class ChatGuardrails:
         return GuardrailResult(not issues, issues, text)
 
     def validate_output(self, text: str, intent: ChatIntent, tools: list[ToolResult] | None = None) -> GuardrailResult:
-        cleaned = clean_llm_text(text)
+        cleaned = sanitize_text(clean_llm_text(text))
         issues = []
         for pattern in self.forbidden_patterns:
             if self._has_unnegated_forbidden_claim(cleaned, pattern):
                 issues.append(f"命中禁止表述：{pattern}")
+        for phrase in self.forbidden_phrases:
+            if phrase in cleaned:
+                issues.append(f"命中禁止表述：{phrase}")
 
         tools = tools or []
         if intent.name == "tl_timing" and self._contains_positive_entry_claim(cleaned) and not self._has_tl_buy_signal(tools):
@@ -115,7 +120,11 @@ class ChatGuardrails:
             if tool.tool != "get_tl_state" or not isinstance(tool.data, dict):
                 continue
             for row in tool.data.get("today", []) or []:
-                if self._truthy(row.get("buy_signal")) or str(row.get("state", "")) == "建议建仓":
+                if (
+                    self._truthy(row.get("buy_signal"))
+                    or str(row.get("status", "")) == "entry_candidate"
+                    or str(row.get("state", "")) == "模型触发建仓候选"
+                ):
                     return True
         return False
 

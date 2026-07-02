@@ -8,6 +8,7 @@ from superpower.runtime.context import AgentContext
 from superpower.tools.frame import records
 from superpower.tools.llm import generate_text
 from superpower.tools.text_cleaner import clean_llm_text
+from superpower.utils.text_safety import sanitize_text
 
 
 COMMITTEE_ROLES = [
@@ -75,7 +76,7 @@ class Skill:
                     "provider": provider,
                     "model": model,
                     "reason": reason,
-                    "review": clean_llm_text(review),
+                    "review": sanitize_text(clean_llm_text(review)),
                 }
             )
 

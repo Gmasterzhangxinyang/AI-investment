@@ -16,7 +16,7 @@ class Skill:
         context.put("tl_recent", tl_recent)
         context.put("tl_signal_history", tl_history)
         return {
-            "tl_state": str(tl_today.iloc[0]["state"]),
+            "tl_state": str(tl_today.iloc[0]["display_status"]) if not tl_today.empty else "数据不足，无法判断",
             "recent_rows": len(tl_recent),
         }
 
@@ -27,6 +27,8 @@ def tl_state(tl: pd.DataFrame, params: dict) -> tuple[pd.DataFrame, pd.DataFrame
 
 
 def tl_state_history(tl: pd.DataFrame, params: dict) -> pd.DataFrame:
+    if tl.empty:
+        return _empty_tl_state()
     out = tl.sort_values("date").reset_index(drop=True).copy()
     weekly_map = _weekly_state_as_of_each_day(out, params)
     out = out.merge(weekly_map, on="date", how="left")
@@ -56,12 +58,38 @@ def tl_state_history(tl: pd.DataFrame, params: dict) -> pd.DataFrame:
         out["buy_signal"] = raw_buy_signal
     out["attention_signal"] = out["attention_week"].fillna(False) | out["daily_attention"].fillna(False)
     out["no_trade_signal"] = weekly_no_trade & ~out["buy_signal"]
-    out["state"] = np.where(
+    out["status"] = np.where(
         out["buy_signal"],
-        "建议建仓",
-        np.where(out["no_trade_signal"], "不做交易", np.where(out["attention_signal"], "关注交易", "中性")),
+        "entry_candidate",
+        np.where(out["no_trade_signal"], "no_trade", np.where(out["attention_signal"], "attention", "neutral")),
     )
+    out["display_status"] = out["status"].map(_display_status)
+    out["state"] = out["display_status"]
+    out["action"] = out["display_status"]
+    out["reason"] = out["weekly_macd_reason"].fillna("MACD历史不足") + "；" + out["daily_kdj_threshold_check"].fillna("KDJ历史不足")
+    out["rule_hits"] = [
+        _tl_rule_hits(row)
+        for _, row in out.iterrows()
+    ]
+    out["risk_notes"] = TL_DIAGNOSTIC_NOTE
+    out["data_quality"] = np.where(out["macd_hist"].notna() & out["kdj_j"].notna(), "OK", "WARN")
+    out["confidence"] = np.where(out["data_quality"] == "OK", "medium", "low")
+    out["metrics"] = [
+        {
+            "close": _safe_float(row.get("收盘价")),
+            "daily_macd_hist": _safe_float(row.get("macd_hist")),
+            "daily_kdj_j": _safe_float(row.get("kdj_j")),
+            "weekly_macd_hist": _safe_float(row.get("week_macd_hist")),
+            "weekly_kdj_j": _safe_float(row.get("week_kdj_j")),
+            "weekly_kdj_low_window": _safe_float(row.get("weekly_kdj_low_window")),
+            "daily_kdj_low_window": _safe_float(row.get("daily_kdj_low_window")),
+        }
+        for _, row in out.iterrows()
+    ]
     return out
+
+
+TL_DIAGNOSTIC_NOTE = "TL 当前仅做状态诊断，不模拟期货连续合约、换月、杠杆、保证金、滑点和完整平仓收益。"
 
 
 def _weekly_state_as_of_each_day(tl: pd.DataFrame, params: dict) -> pd.DataFrame:
@@ -157,3 +185,74 @@ def _kdj_threshold_text(low_value: float, threshold: float, label: str, conditio
     status = "低于" if low_value < threshold else "未低于"
     result = "满足" if condition_met else "不满足"
     return f"{label}J值最低值：{low_value:.4f}，{status}{threshold:g}，KDJ低位反弹条件{result}"
+
+
+def _display_status(status: str) -> str:
+    return {
+        "no_trade": "不做交易",
+        "attention": "关注交易",
+        "entry_candidate": "模型触发建仓候选",
+        "neutral": "中性",
+        "unavailable": "数据不足，无法判断",
+    }.get(status, "中性")
+
+
+def _tl_rule_hits(row: pd.Series) -> str:
+    hits = [
+        f"周线MACD：{row.get('weekly_macd_reason', '未知')}",
+        f"周线KDJ：{row.get('weekly_kdj_threshold_check', '未知')}",
+        f"日线MACD：{row.get('daily_macd_reason', '未知')}",
+        f"日线KDJ：{row.get('daily_kdj_threshold_check', '未知')}",
+    ]
+    if bool(row.get("buy_signal")):
+        hits.append("满足TL建仓候选规则")
+    elif bool(row.get("no_trade_signal")):
+        hits.append("满足TL不做交易规则")
+    elif bool(row.get("attention_signal")):
+        hits.append("满足TL关注规则")
+    return "；".join(hits)
+
+
+def _safe_float(value: object) -> float | None:
+    try:
+        if pd.isna(value):
+            return None
+        return round(float(value), 6)
+    except (TypeError, ValueError):
+        return None
+
+
+def _empty_tl_state() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "date": pd.NaT,
+                "code": "TL.CFE",
+                "name": "30年国债期货TL",
+                "status": "unavailable",
+                "display_status": "数据不足，无法判断",
+                "state": "数据不足，无法判断",
+                "action": "数据不足，无法判断",
+                "reason": "TL有效行情不足",
+                "metrics": {},
+                "rule_hits": "",
+                "risk_notes": TL_DIAGNOSTIC_NOTE,
+                "confidence": "low",
+                "data_quality": "ERROR",
+                "buy_signal": False,
+                "attention_signal": False,
+                "no_trade_signal": False,
+                "收盘价": np.nan,
+                "macd_hist": np.nan,
+                "kdj_j": np.nan,
+                "week_macd_hist": np.nan,
+                "week_kdj_j": np.nan,
+                "weekly_macd_reason": "TL行情不足",
+                "weekly_kdj_threshold_check": "TL行情不足，KDJ低位条件不满足",
+                "daily_macd_reason": "TL行情不足",
+                "daily_kdj_threshold_check": "TL行情不足，KDJ低位条件不满足",
+                "weekly_kdj_low_window": np.nan,
+                "daily_kdj_low_window": np.nan,
+            }
+        ]
+    )

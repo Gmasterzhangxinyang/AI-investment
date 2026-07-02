@@ -9,7 +9,7 @@ class TLAgent(SkillBackedAgent):
     success_message = "TL策略运行完成"
     spec = AgentSpec(
         role="TL 择时 Agent",
-        objective="根据30年国债期货 TL 的 MACD 柱和 KDJ 规则输出不做交易、关注交易或建议建仓。",
+        objective="根据30年国债期货 TL 的 MACD 柱和 KDJ 规则输出不做交易、关注交易或模型触发建仓候选。",
         skill_name="tl-timing-strategy",
         required_artifacts=("skill_registry", "tl_indicators", "strategy_params"),
         produced_artifacts=("tl_today", "tl_recent"),

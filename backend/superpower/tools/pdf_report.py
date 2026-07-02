@@ -13,6 +13,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from superpower.utils.text_safety import DISCLAIMER, sanitize_dashboard
 
 
 FONT_NAME = "STSong-Light"
@@ -21,6 +22,7 @@ FONT_NAME = "STSong-Light"
 def write_research_pdf(root_dir: Path, dashboard: dict[str, Any]) -> Path:
     """Create a Chinese-safe PDF report from the latest dashboard payload."""
     pdfmetrics.registerFont(UnicodeCIDFont(FONT_NAME))
+    dashboard = sanitize_dashboard(dashboard)
 
     report_date = dashboard.get("reportDate", "latest")
     output_path = root_dir / "outputs" / f"AI投研日报-Superpower-{report_date}.pdf"
@@ -41,6 +43,7 @@ def write_research_pdf(root_dir: Path, dashboard: dict[str, Any]) -> Path:
 
     story.append(Paragraph("AI 投研日报", styles["TitleCn"]))
     story.append(Paragraph(f"报告日期：{report_date}", styles["Muted"]))
+    story.append(Paragraph(DISCLAIMER, styles["Muted"]))
     story.append(Spacer(1, 7 * mm))
 
     story.append(Paragraph("今日总览", styles["Section"]))

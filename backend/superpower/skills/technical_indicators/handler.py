@@ -11,11 +11,17 @@ class Skill:
         etf_raw = context.get("etf_market_raw")
         tl_raw = context.get("tl_market_raw")
 
-        etf_indicators = pd.concat(
-            [add_indicators(group, "成交量（万股）") for _, group in etf_raw.groupby(["name", "code"])],
-            ignore_index=True,
-        )
-        tl_indicators = add_indicators(tl_raw, "成交量").sort_values("date").reset_index(drop=True)
+        if etf_raw.empty:
+            etf_indicators = _empty_indicators(etf_raw, "成交量（万股）")
+        else:
+            etf_indicators = pd.concat(
+                [add_indicators(group, "成交量（万股）") for _, group in etf_raw.groupby(["name", "code"])],
+                ignore_index=True,
+            )
+        if tl_raw.empty:
+            tl_indicators = _empty_indicators(tl_raw, "成交量")
+        else:
+            tl_indicators = add_indicators(tl_raw, "成交量").sort_values("date").reset_index(drop=True)
 
         context.put("etf_indicators", etf_indicators)
         context.put("tl_indicators", tl_indicators)
@@ -26,6 +32,8 @@ class Skill:
 
 
 def add_indicators(group: pd.DataFrame, volume_field: str) -> pd.DataFrame:
+    if group.empty:
+        return _empty_indicators(group, volume_field)
     g = group.sort_values("date").copy()
     close = g["收盘价"].astype(float)
     high = g["最高价"].astype(float)
@@ -35,7 +43,8 @@ def add_indicators(group: pd.DataFrame, volume_field: str) -> pd.DataFrame:
     for window in (5, 10, 20, 60):
         g[f"ma{window}"] = close.rolling(window, min_periods=window).mean()
 
-    g["vol_ma60"] = volume.shift(1).rolling(60, min_periods=20).mean()
+    volume_for_average = volume.where(volume > 0)
+    g["vol_ma60"] = volume_for_average.shift(1).rolling(60, min_periods=20).mean()
     g["vol_ratio60"] = volume / g["vol_ma60"]
 
     ema12 = close.ewm(span=12, adjust=False, min_periods=12).mean()
@@ -62,3 +71,26 @@ def add_indicators(group: pd.DataFrame, volume_field: str) -> pd.DataFrame:
     g["kdj_d"] = d_values
     g["kdj_j"] = 3 * g["kdj_k"] - 2 * g["kdj_d"]
     return g
+
+
+def _empty_indicators(frame: pd.DataFrame, volume_field: str) -> pd.DataFrame:
+    out = frame.copy()
+    for col in [
+        "ma5",
+        "ma10",
+        "ma20",
+        "ma60",
+        "vol_ma60",
+        "vol_ratio60",
+        "dif",
+        "dea",
+        "macd_hist",
+        "kdj_k",
+        "kdj_d",
+        "kdj_j",
+    ]:
+        if col not in out.columns:
+            out[col] = pd.Series(dtype=float)
+    if volume_field not in out.columns:
+        out[volume_field] = pd.Series(dtype=float)
+    return out
