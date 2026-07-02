@@ -59,6 +59,77 @@ http://127.0.0.1:8766/frontend/
 
 系统采用 `Agent -> Skill -> Tool` 的可审计结构。
 
+### 系统总览图
+
+```mermaid
+flowchart LR
+    User["用户 / 投研人员"] --> Frontend["本地 Web 工作台<br/>投研问答 / 每日报告 / ETF / TL / 可转债"]
+    Wind["Wind Excel 模板<br/>ETF / TL / 可转债"] --> Server["Local HTTP Server<br/>serve.py"]
+    Frontend --> Server
+
+    Server --> Chat["Chat Orchestrator<br/>意图识别 / 证据读取 / 输出校验"]
+    Server --> Workflow["Daily Workflow Orchestrator<br/>一键刷新 / 日报生成"]
+    Server --> Repo["SQLite Repository<br/>asset / signals / backtest / traces"]
+    Server --> Export["Report Exporter<br/>Excel / PDF"]
+
+    Chat --> Rulebook["客户规则库<br/>ETF / TL / 可转债口径"]
+    Chat --> Evidence["证据包<br/>dashboard.json + SQLite + 策略参数"]
+    Chat --> LLM["OpenAI LLM 可选<br/>只解释和复核，不改写信号"]
+
+    Workflow --> Agents["Agent Pipeline"]
+    Agents --> Skills["Skill Packages"]
+    Skills --> Tools["Tools<br/>Excel / 指标 / 回测 / PDF / LLM"]
+
+    Agents --> Repo
+    Agents --> Export
+    Export --> Reports["本地报告输出<br/>outputs/latest + Excel + PDF"]
+```
+
+### 日更工作流
+
+```mermaid
+flowchart TD
+    A["ConfigAgent<br/>读取参数和路径"] --> B["SourceArchiveAgent<br/>源文件哈希归档"]
+    B --> C["DataAgent<br/>解析 Wind Excel"]
+    C --> D["PortfolioAgent<br/>读取客户持仓状态"]
+    D --> E["QAAgent<br/>数据质量校验"]
+    E --> F["IndicatorAgent<br/>MA / MACD / KDJ / 量能"]
+    F --> G["ETFAgent<br/>建仓 / 平仓 / 关注池"]
+    F --> H["TLAgent<br/>不做交易 / 关注 / 建仓"]
+    F --> I["ConvertibleBondAgent<br/>风险过滤 / 打分 / Top10"]
+    G --> J["BacktestAgent<br/>完整交易回测 + 次日验证"]
+    H --> J
+    I --> K["RiskAgent<br/>组合层风险摘要"]
+    J --> K
+    K --> L["AIResearchCommitteeAgent<br/>可选深度复核"]
+    L --> M["ExplanationAgent<br/>生成客户可读解释"]
+    M --> N["ReportAgent<br/>Excel / dashboard.json / SQLite"]
+```
+
+### 数据流
+
+```mermaid
+flowchart LR
+    Excel["Wind Excel<br/>data/wind/current/*.xlsx"] --> Ingest["Excel Reader<br/>标准化为行情和截面表"]
+    Ingest --> Indicators["Technical Indicators<br/>MA / MACD / KDJ / Volume Ratio"]
+    Indicators --> ETF["ETF Strategy<br/>信号和评分"]
+    Indicators --> TL["TL Timing<br/>日线 + 周线状态"]
+    Ingest --> CB["Convertible Bond Ranking<br/>风险过滤 + 打分"]
+
+    ETF --> Dashboard["dashboard.json"]
+    TL --> Dashboard
+    CB --> Dashboard
+    ETF --> Backtest["Backtest<br/>完整交易 + 次日方向验证"]
+    Backtest --> Dashboard
+
+    Dashboard --> SQLite["SQLite<br/>data/research.db"]
+    Dashboard --> Frontend["Frontend"]
+    Dashboard --> ExcelReport["Excel 日报"]
+    Dashboard --> PDFReport["PDF 报告"]
+```
+
+### 代码结构图
+
 ```text
 Frontend
   └── Local HTTP Server
@@ -361,4 +432,3 @@ python tests/smoke.py
 - Mac launchd 定时任务。
 - 邮件、企业微信或飞书日报推送。
 - 参数变更记录和版本化报告归档。
-
