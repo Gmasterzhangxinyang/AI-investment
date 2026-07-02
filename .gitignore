@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.tmp
+.venv/
+venv/
+*.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -50,3 +53,6 @@ data/wind/current/*.xlsx
 
 # Temporary spreadsheet inspection artifacts.
 *.inspect.ndjson
+
+# Local delivery archives
+*.zip
