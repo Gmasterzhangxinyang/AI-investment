@@ -30,6 +30,8 @@ def tl_state_history(tl: pd.DataFrame, params: dict) -> pd.DataFrame:
     if tl.empty:
         return _empty_tl_state()
     out = tl.sort_values("date").reset_index(drop=True).copy()
+    if len(out) < 60:
+        return _insufficient_tl_history(out)
     weekly_map = _weekly_state_as_of_each_day(out, params)
     out = out.merge(weekly_map, on="date", how="left")
     daily_conditions = [
@@ -256,3 +258,50 @@ def _empty_tl_state() -> pd.DataFrame:
             }
         ]
     )
+
+
+def _insufficient_tl_history(tl: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    history_rows = len(tl)
+    reason = f"TL有效历史仅{history_rows}行，少于60行，不能形成完整日线/周线状态诊断"
+    for _, row in tl.iterrows():
+        rows.append(
+            {
+                "date": row.get("date", pd.NaT),
+                "code": row.get("code", "TL.CFE"),
+                "name": row.get("name", "30年国债期货TL"),
+                "status": "unavailable",
+                "display_status": "数据不足，无法判断",
+                "state": "数据不足，无法判断",
+                "action": "数据不足，无法判断",
+                "reason": reason,
+                "metrics": {
+                    "close": _safe_float(row.get("收盘价")),
+                    "daily_macd_hist": _safe_float(row.get("macd_hist")),
+                    "daily_kdj_j": _safe_float(row.get("kdj_j")),
+                    "weekly_macd_hist": None,
+                    "weekly_kdj_j": None,
+                    "weekly_kdj_low_window": None,
+                    "daily_kdj_low_window": None,
+                },
+                "rule_hits": "TL有效历史不足，不能触发建仓候选规则",
+                "risk_notes": TL_DIAGNOSTIC_NOTE,
+                "confidence": "low",
+                "data_quality": "ERROR",
+                "buy_signal": False,
+                "attention_signal": False,
+                "no_trade_signal": False,
+                "收盘价": row.get("收盘价", np.nan),
+                "macd_hist": row.get("macd_hist", np.nan),
+                "kdj_j": row.get("kdj_j", np.nan),
+                "week_macd_hist": np.nan,
+                "week_kdj_j": np.nan,
+                "weekly_macd_reason": "TL有效历史不足",
+                "weekly_kdj_threshold_check": "TL有效历史不足，KDJ低位条件不满足",
+                "daily_macd_reason": "TL有效历史不足",
+                "daily_kdj_threshold_check": "TL有效历史不足，KDJ低位条件不满足",
+                "weekly_kdj_low_window": np.nan,
+                "daily_kdj_low_window": np.nan,
+            }
+        )
+    return pd.DataFrame(rows)

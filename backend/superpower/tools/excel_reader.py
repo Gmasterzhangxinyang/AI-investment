@@ -63,6 +63,7 @@ def filter_etf_market_to_universe(market: pd.DataFrame, universe: pd.DataFrame) 
     enabled_codes = set(universe["code"].astype(str))
     name_by_code = dict(zip(universe["code"], universe["name"], strict=False))
     filtered = market[market["code"].astype(str).isin(enabled_codes)].copy()
+    filtered.attrs.update(market.attrs)
     if filtered.empty:
         return filtered
     filtered["name"] = filtered["code"].map(name_by_code).fillna(filtered["name"])
@@ -443,9 +444,10 @@ def filter_trading_rows(df: pd.DataFrame, volume_field: str) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Missing required fields: {missing}")
 
-    filtered = df[
-        (df[volume_field].fillna(0) > 0)
-        & (df["开盘价"].fillna(0) > 0)
-        & (df["收盘价"].fillna(0) > 0)
-    ].copy()
-    return filtered.sort_values(["code", "date"]).reset_index(drop=True)
+    valid = pd.Series(True, index=df.index)
+    for field in required:
+        valid = valid & pd.to_numeric(df[field], errors="coerce").fillna(0).gt(0)
+
+    filtered = df[valid].copy().sort_values(["code", "date"]).reset_index(drop=True)
+    filtered.attrs["invalid_trading_rows"] = int((~valid).sum())
+    return filtered

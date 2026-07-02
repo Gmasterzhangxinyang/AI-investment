@@ -92,7 +92,7 @@ def latest_etf_signals(
         buy_signal = bool(buy_reasons) and code not in holding_codes
         sell_signal = bool(sell_reasons) and code in holding_codes
         signal_type = _signal_type(buy_signal, sell_signal, watch_type)
-        action = _action_text(signal_type)
+        display_action = _action_text(signal_type)
         risk_notes = _risk_notes(row, prev, signal_type, watch_type)
         data_quality = "OK" if pd.notna(row.get("vol_ratio60")) else "WARN"
         confidence = _confidence(data_quality, signal_type, row)
@@ -105,8 +105,8 @@ def latest_etf_signals(
                 "name": name,
                 "position_status": "持仓中" if code in holding_codes else "未持仓/已平仓",
                 "signal_type": signal_type,
-                "action": action,
-                "display_action": action,
+                "action": signal_type,
+                "display_action": display_action,
                 "reason": reason,
                 "metrics": _metrics(row),
                 "rule_hits": _rule_hits(buy_reasons, sell_reasons, watch_type, missing_condition),
@@ -175,7 +175,7 @@ def _unavailable_row(row: pd.Series, code: str, name: str, history_rows: int, is
         "name": name,
         "position_status": "持仓中" if is_holding else "未持仓/已平仓",
         "signal_type": "data_unavailable",
-        "action": "数据不足，无法判断",
+        "action": "data_unavailable",
         "display_action": "数据不足，无法判断",
         "reason": reason,
         "metrics": _metrics(row),
@@ -317,6 +317,7 @@ def _metrics(row: pd.Series) -> dict[str, Any]:
         "ma20": _safe_float(row.get("ma20")),
         "ma60": _safe_float(row.get("ma60")),
         "vol_ratio60": _safe_float(row.get("vol_ratio60")),
+        "volume_ratio_60": _safe_float(row.get("vol_ratio60")),
         "macd_hist": _safe_float(row.get("macd_hist")),
         "dif": _safe_float(row.get("dif")),
         "dea": _safe_float(row.get("dea")),

@@ -42,4 +42,9 @@ def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
 
     assert {"run_info", "data_quality", "etf", "tl", "convertible_bond", "report_summary"}.issubset(payload)
     assert payload["data_quality"]["overall_status"] == "ERROR"
-
+    assert "warnings" in payload["run_info"]
+    assert {"etf", "tl", "convertible_bond"}.issubset(payload["data_quality"])
+    assert "all_signals" in payload["etf"]
+    assert payload["tl"]["status"] == "unavailable"
+    assert "candidates" in payload["convertible_bond"]
+    assert "key_points" in payload["report_summary"]

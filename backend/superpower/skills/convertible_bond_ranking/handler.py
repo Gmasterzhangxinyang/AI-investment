@@ -13,13 +13,17 @@ OUTPUT_COLUMNS = [
     "date",
     "bond_code",
     "bond_name",
+    "code",
+    "name",
     "price",
     "remaining_years",
     "conversion_premium_rate",
+    "premium_rate",
     "ytm",
     "stock_code",
     "stock_name",
     "bond_rating",
+    "rating",
     "sw_l1",
     "sw_l2",
     "stock_price",
@@ -64,10 +68,13 @@ EXCLUDED_COLUMNS = [
     "date",
     "bond_code",
     "bond_name",
+    "code",
+    "name",
     "price",
     "ytm",
     "conversion_premium_rate",
     "bond_rating",
+    "rating",
     "sw_l1",
     "remaining_size",
     "redemption_status",
@@ -126,7 +133,7 @@ def rank_convertible_bonds(
     low_remaining_size_hard_exclude = float(config.get("min_remaining_size_hard_exclude", 0.5))
     bad_ratings = {str(item).upper() for item in config.get("hard_exclude_ratings", _default_bad_ratings())}
     exclude_st_stock = bool(config.get("exclude_st_stock", True))
-    exclude_unresolved_redemption = bool(config.get("exclude_unresolved_redemption_trigger", False))
+    exclude_unresolved_redemption = bool(config.get("exclude_unresolved_redemption_trigger", True))
     negative_ytm_penalty = float(config.get("negative_ytm_penalty", 28))
     high_premium_penalty = float(config.get("high_premium_penalty", 28))
     negative_growth_penalty = float(config.get("negative_growth_penalty", 8))
@@ -158,6 +165,10 @@ def rank_convertible_bonds(
     if df.empty:
         empty = _empty_output()
         return (empty, _empty_excluded()) if include_excluded else empty
+    df["code"] = df["bond_code"]
+    df["name"] = df["bond_name"]
+    df["rating"] = df["bond_rating"]
+    df["premium_rate"] = df["conversion_premium_rate"]
 
     report_date = _report_date(df)
     df["redemption_trigger_ratio_normalized"] = _normalise_trigger_ratio(df["redemption_trigger_ratio"])
@@ -167,6 +178,11 @@ def rank_convertible_bonds(
         & df["conversion_price"].notna()
         & df["redemption_trigger_ratio_normalized"].notna()
         & (df["stock_price"] >= df["redemption_trigger_price"])
+    )
+    df["redemption_data_missing"] = (
+        df["stock_price"].isna()
+        | df["conversion_price"].isna()
+        | df["redemption_trigger_ratio_normalized"].isna()
     )
     df["redemption_triggered"] = df["redemption_triggered"].fillna(False).astype(bool) | computed_triggered.fillna(False)
 
@@ -257,14 +273,19 @@ def rank_convertible_bonds(
     ]
     eligible["risk_level"] = eligible["risk_flags"].map(_risk_level)
     eligible["rank_reason"] = [_rank_reason(row) for _, row in eligible.iterrows()]
+    eligible["code"] = eligible["bond_code"]
+    eligible["name"] = eligible["bond_name"]
+    eligible["rating"] = eligible["bond_rating"]
+    eligible["premium_rate"] = eligible["conversion_premium_rate"]
     eligible["score_breakdown"] = [_score_breakdown(row) for _, row in eligible.iterrows()]
     eligible["action"] = "进入可转债Top10候选池"
     eligible["reason"] = eligible["rank_reason"]
     eligible["metrics"] = [_metrics(row) for _, row in eligible.iterrows()]
     eligible["rule_hits"] = [_rule_hits(row) for _, row in eligible.iterrows()]
-    eligible["risk_notes"] = eligible["risk_flags"].fillna("").replace("", "无明显风控扣分项")
+    eligible["risk_notes"] = eligible["risk_flags"].map(_risk_note_list)
     eligible["data_quality"] = "OK"
     eligible["confidence"] = eligible["risk_level"].map({"低": "high", "中": "medium", "高": "low"}).fillna("medium")
+    eligible.loc[eligible["redemption_data_missing"].fillna(False).astype(bool), "confidence"] = "low"
 
     output = eligible[OUTPUT_COLUMNS].copy()
     output = output.sort_values(
@@ -294,6 +315,7 @@ def _ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
         "growth_base_unstable",
         "latest_profit_negative",
         "exclusion_reason",
+        "redemption_data_missing",
     ]:
         if col not in df.columns:
             df[col] = pd.NA
@@ -399,6 +421,8 @@ def _is_no_redeem_stale(series: pd.Series, report_date: pd.Timestamp, valid_days
 def _redemption_status(row: pd.Series) -> str:
     if bool(row.get("has_redeem_announcement")):
         return "已发强赎公告，剔除"
+    if bool(row.get("redemption_data_missing")):
+        return "强赎字段不足，需人工复核"
     if not bool(row.get("redemption_triggered")):
         return "未触发强赎价"
     if bool(row.get("has_no_redeem_announcement")) and not bool(row.get("no_redeem_is_stale")):
@@ -549,6 +573,8 @@ def _redemption_score(row: pd.Series) -> float:
         return 42.0
     if status == "触发强赎价，未见有效公告":
         return 25.0
+    if status == "强赎字段不足，需人工复核":
+        return 35.0
     return 0.0
 
 
@@ -652,9 +678,11 @@ def _risk_flags(
     ):
         flags.append("增长率极端，评分已截尾")
     if _num(row.get("ytm")) < 0:
-        flags.append("到期收益率为负，已扣分（按幅度）")
+        flags.append("到期收益率为负，意味着按当前价格持有到期并不具备正收益保护，需要依赖正股上涨或转股价值改善，已扣分（按幅度）")
     if _num(row.get("remaining_size")) < 2:
         flags.append("存续规模偏小")
+    if bool(row.get("redemption_data_missing")):
+        flags.append("强赎字段不足，置信度降为low")
     rating_key = row.get("rating_key")
     if rating_key in {"A+", "A", "A-"}:
         flags.append(f"评级{row.get('bond_rating')}偏低")
@@ -676,6 +704,12 @@ def _risk_level(flags: str) -> str:
     if any(token in flags for token in high_tokens):
         return "高"
     return "中"
+
+
+def _risk_note_list(flags: object) -> list[str]:
+    text = "" if flags is None or pd.isna(flags) else str(flags)
+    notes = [part for part in text.split("；") if part]
+    return notes or ["无明显风控扣分项"]
 
 
 def _score_breakdown(row: pd.Series) -> dict[str, float | None]:

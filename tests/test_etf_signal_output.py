@@ -53,7 +53,9 @@ def test_etf_signal_rows_include_delivery_evidence_fields() -> None:
 
     assert not signals.empty
     assert buys.iloc[0]["signal_type"] == "buy_candidate"
-    assert buys.iloc[0]["action"] == "模型触发建仓候选"
+    assert buys.iloc[0]["action"] == "buy_candidate"
+    assert buys.iloc[0]["display_action"] == "模型触发建仓候选"
+    assert buys.iloc[0]["metrics"]["volume_ratio_60"] == 1.2
     for column in ["reason", "metrics", "rule_hits", "risk_notes", "confidence", "data_quality"]:
         assert column in signals.columns
     assert sells.empty

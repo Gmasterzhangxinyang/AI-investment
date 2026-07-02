@@ -222,17 +222,22 @@ def _stable_dashboard_schema(
 ) -> dict[str, Any]:
     quality_status = _overall_quality_status(quality)
     risk_notes = _top_risk_notes(quality, risk, safety_scan)
+    run_warnings = _run_warnings(quality, risk, safety_scan)
     return {
         "run_info": {
             "run_id": context.run_id,
             "trade_date": report_date,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "status": "success" if quality_status == "OK" else "partial_success",
+            "warnings": run_warnings,
             "llm_enabled": bool(llm_usage.get("llm_used", False)),
             "disclaimer": DISCLAIMER,
         },
         "data_quality": {
             "overall_status": quality_status,
+            "etf": _quality_module_summary(quality, "ETF"),
+            "tl": _quality_module_summary(quality, "TL"),
+            "convertible_bond": _quality_module_summary(quality, "可转债"),
             "checks": records(quality),
             "errors": _quality_rows(quality, {"ERROR", "FAIL"}),
             "warnings": _quality_rows(quality, {"WARN"}),
@@ -248,7 +253,9 @@ def _stable_dashboard_schema(
             "buy_candidates": records(etf_buys),
             "watchlist": records(etf_watchlist),
             "sell_alerts": records(etf_sells),
+            "all_signals": records(etf_all),
             "signals": records(etf_all),
+            "warnings": _quality_module_warnings(quality, "ETF"),
             "backtest_diagnostics": {
                 "label": "历史回测诊断",
                 "execution_assumption": "T日收盘后生成信号，T+1开盘模拟执行；未计入真实滑点、冲击成本、容量和税费差异。",
@@ -259,6 +266,11 @@ def _stable_dashboard_schema(
         "tl": {
             "status": _first_value(tl_today, "status", "unavailable"),
             "display_status": _first_value(tl_today, "display_status", "数据不足，无法判断"),
+            "reason": _first_value(tl_today, "reason", "数据不足，无法判断"),
+            "metrics": _first_value(tl_today, "metrics", {}),
+            "rule_hits": _split_notes(_first_value(tl_today, "rule_hits", "")),
+            "risk_notes": _split_notes(_first_value(tl_today, "risk_notes", "")),
+            "warnings": _quality_module_warnings(quality, "TL"),
             "today": records(tl_today),
             "recent": records(tl_recent, limit=30),
             "note": "TL 当前仅做状态诊断，不模拟期货连续合约、换月、杠杆、保证金、滑点和完整平仓收益。",
@@ -271,13 +283,17 @@ def _stable_dashboard_schema(
                 "excluded": len(cb_excluded),
             },
             "top10": records(cb_top10),
+            "candidates": records(cb_ranked, limit=100),
             "ranked_candidates": records(cb_ranked, limit=100),
             "excluded": records(cb_excluded, limit=200),
+            "warnings": _quality_module_warnings(quality, "可转债") + _industry_warning_items(cb_top10),
             "industry_concentration_warning": _industry_warning(cb_top10),
         },
         "report_summary": {
             "headline": _summary_headline(dashboard),
+            "key_points": _summary_key_points(dashboard),
             "key_metrics": records(dashboard),
+            "risk_notes": risk_notes[:3],
             "top_risk_notes": risk_notes[:3],
             "text_safety": {
                 "status": "OK" if safety_scan.empty else "WARN",
@@ -315,6 +331,36 @@ def _quality_rows(quality: pd.DataFrame, statuses: set[str]) -> list[dict[str, A
         return []
     rows = quality[quality["status"].astype(str).str.upper().isin(statuses)]
     return records(rows)
+
+
+def _run_warnings(quality: pd.DataFrame, risk: pd.DataFrame, safety_scan: pd.DataFrame) -> list[str]:
+    return _top_risk_notes(quality, risk, safety_scan)
+
+
+def _quality_module_summary(quality: pd.DataFrame, label: str) -> dict[str, Any]:
+    rows = _quality_module_rows(quality, label)
+    status = _overall_quality_status(pd.DataFrame(rows)) if rows else "OK"
+    return {
+        "status": status,
+        "warnings": [row for row in rows if str(row.get("status", "")).upper() == "WARN"],
+        "errors": [row for row in rows if str(row.get("status", "")).upper() in {"ERROR", "FAIL"}],
+    }
+
+
+def _quality_module_warnings(quality: pd.DataFrame, label: str) -> list[str]:
+    rows = _quality_module_rows(quality, label)
+    return [
+        f"{row.get('item')}：{row.get('detail')}。{row.get('note', '')}".strip()
+        for row in rows
+        if str(row.get("status", "")).upper() in {"WARN", "ERROR", "FAIL"}
+    ]
+
+
+def _quality_module_rows(quality: pd.DataFrame, label: str) -> list[dict[str, Any]]:
+    if quality.empty or "item" not in quality.columns:
+        return []
+    mask = quality["item"].astype(str).str.contains(label, na=False)
+    return records(quality[mask])
 
 
 def _module_status(frame: pd.DataFrame, quality: pd.DataFrame, label: str) -> str:
@@ -355,6 +401,13 @@ def _industry_warning(top10: pd.DataFrame) -> str:
     return "Top10行业集中度未触发明显警示"
 
 
+def _industry_warning_items(top10: pd.DataFrame) -> list[str]:
+    warning = _industry_warning(top10)
+    if "需关注" in warning:
+        return [f"{warning}；候选结果存在行业集中，需人工复核组合分散度。"]
+    return []
+
+
 def _summary_headline(dashboard: pd.DataFrame) -> str:
     values = {str(row["item"]): row["value"] for _, row in dashboard.iterrows()} if not dashboard.empty else {}
     return (
@@ -365,10 +418,29 @@ def _summary_headline(dashboard: pd.DataFrame) -> str:
     )
 
 
+def _summary_key_points(dashboard: pd.DataFrame) -> list[str]:
+    if dashboard.empty:
+        return []
+    return [f"{row['item']}：{row['value']}" for _, row in dashboard.head(8).iterrows()]
+
+
+def _split_notes(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item)]
+    if isinstance(value, dict):
+        return [str(value)]
+    text = "" if value is None else str(value)
+    if not text or text.lower() in {"nan", "none"}:
+        return []
+    return [part for part in text.split("；") if part]
+
+
 def _first_value(frame: pd.DataFrame, column: str, default: Any) -> Any:
     if frame.empty or column not in frame.columns:
         return default
     value = frame.iloc[0].get(column, default)
+    if isinstance(value, (dict, list)):
+        return value
     return default if pd.isna(value) else value
 
 

@@ -4,23 +4,32 @@
 
 ## 加固范围
 
-1. 日更链路稳定。
+1. 稳定运行。
    缺少单个 Excel 不阻塞全局流程；对应模块输出不可用状态和审计原因。
 
-2. Dashboard 契约稳定。
-   新增 `run_info/data_quality/etf/tl/convertible_bond/report_summary` 固定结构，同时保留旧字段兼容前端。
+2. 缺数据降级。
+   缺 ETF、TL 或可转债任一文件时，其他模块继续生成；缺失模块写入 `data_quality` 和 `run_info.warnings`。
 
-3. 结论证据稳定。
+3. 固定 dashboard schema。
+   新增并固定 `run_info/data_quality/etf/tl/convertible_bond/report_summary` 结构，同时保留旧字段兼容前端。
+
+4. 数据质量检查。
+   缺字段、缺历史、非交易行、零成交量、重复行和无效价格均有明确质检项；TL 缺 `code` 时按日期检查重复，不崩溃。
+
+5. ETF/TL/可转债依据字段。
    ETF、TL、可转债核心输出补充 `action/reason/metrics/rule_hits/risk_notes/confidence/data_quality`。
 
-4. 报告话术稳定。
+6. 报告安全口径。
    引入统一文本安全工具，拦截收益承诺和过强交易表述，所有报告保留免责声明。
 
-5. 数据质量稳定。
-   明确缺字段、缺历史、非交易行、零成交量、重复行、无效价格的处理口径。
-
-6. 历史诊断稳定。
+7. 轻量历史诊断。
    回测统一表述为“历史回测诊断”，短期验证统一表述为“短期方向诊断”，并披露 T 日收盘信号、T+1 开盘执行的假设。
+
+8. 客户数据保护。
+   真实 Excel、SQLite、PDF/Excel 输出、日志和 API key 不进入 Git。
+
+9. QA audit 稳定。
+   默认 audit 非 PASS 只写入 `outputs/latest/audit.json` 和 `dashboard.run_info.warnings`；只有 `--strict-audit` 会让 audit 非 PASS 返回非 0。
 
 ## 验收命令
 
@@ -42,4 +51,4 @@ python serve.py --port 8766
 - 不做机器学习预测。
 - 不做复杂组合层资金曲线重构。
 - 不允许 LLM 新增或修改交易信号。
-
+- 不提供收益承诺。

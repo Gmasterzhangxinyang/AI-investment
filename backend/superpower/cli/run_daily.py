@@ -22,6 +22,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-dir", type=Path, default=None)
     parser.add_argument("--skip-audit", action="store_true")
     parser.add_argument(
+        "--strict-audit",
+        action="store_true",
+        help="Exit with non-zero status when the independent QA audit is not PASS.",
+    )
+    parser.add_argument(
         "--disable-llm",
         action="store_true",
         help="Disable optional LLM commentary for fast deterministic refresh runs.",
@@ -66,11 +71,13 @@ def main() -> None:
 
     if not args.skip_audit:
         _emit_phase("phase_started", 15, 16, "qa-audit", "Run independent report audit.", "Running QA audit")
-        qa_result = audit_latest(root_dir, args.etf_file, args.tl_file, cb_file)
+        qa_result = _run_latest_audit(root_dir, args.etf_file, args.tl_file, cb_file)
         _emit_phase("phase_finished", 15, 16, "qa-audit", "Run independent report audit.", qa_result["status"])
         print(f"qa_status={qa_result['status']}", flush=True)
         print(f"qa_report={root_dir / 'outputs' / 'latest' / 'audit.json'}", flush=True)
-        if qa_result["status"] != "PASS":
+        if context.maybe("dashboard_json_path"):
+            _append_audit_warnings(Path(context.get("dashboard_json_path")), qa_result)
+        if _audit_requires_exit(qa_result, args.strict_audit):
             raise SystemExit(1)
 
     if context.maybe("dashboard_json_path"):
@@ -95,6 +102,57 @@ def _configured_cb_file(root_dir: Path) -> Path | None:
 def _resolve_config_path(root_dir: Path, path: Path) -> Path:
     expanded = path.expanduser()
     return expanded if expanded.is_absolute() else root_dir / expanded
+
+
+def _run_latest_audit(root_dir: Path, etf_file: Path, tl_file: Path, cb_file: Path | None) -> dict[str, object]:
+    try:
+        return audit_latest(root_dir, etf_file, tl_file, cb_file)
+    except Exception as exc:
+        payload: dict[str, object] = {
+            "status": "FAIL",
+            "checks": [
+                {
+                    "name": "qa audit execution",
+                    "status": "FAIL",
+                    "detail": str(exc),
+                }
+            ],
+            "source": {
+                "etfFile": str(etf_file),
+                "tlFile": str(tl_file),
+                "cbFile": str(cb_file) if cb_file else "",
+            },
+        }
+        latest_dir = root_dir / "outputs" / "latest"
+        latest_dir.mkdir(parents=True, exist_ok=True)
+        (latest_dir / "audit.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return payload
+
+
+def _append_audit_warnings(dashboard_path: Path, qa_result: dict[str, object]) -> None:
+    if not dashboard_path.exists():
+        return
+    dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+    run_info = dashboard.setdefault("run_info", {})
+    warnings = run_info.setdefault("warnings", [])
+    if not isinstance(warnings, list):
+        warnings = [str(warnings)]
+    checks = qa_result.get("checks", [])
+    failed_checks = [
+        f"QA audit {check.get('status')}: {check.get('name')} - {check.get('detail')}"
+        for check in checks
+        if isinstance(check, dict) and str(check.get("status", "")).upper() != "PASS"
+    ]
+    if str(qa_result.get("status", "")).upper() != "PASS":
+        warnings.append(f"QA audit status={qa_result.get('status')}")
+        warnings.extend(failed_checks)
+        run_info["status"] = "partial_success"
+    run_info["warnings"] = warnings
+    dashboard_path.write_text(json.dumps(dashboard, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+
+
+def _audit_requires_exit(qa_result: dict[str, object], strict_audit: bool) -> bool:
+    return bool(strict_audit and str(qa_result.get("status", "")).upper() != "PASS")
 
 
 def _emit_progress(payload: dict[str, object]) -> None:

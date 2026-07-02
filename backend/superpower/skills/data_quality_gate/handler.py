@@ -134,7 +134,8 @@ def _market_value_checks(label: str, frame: pd.DataFrame, volume_field: str) -> 
     checks: list[dict[str, object]] = []
     if frame.empty:
         return [_check(f"{label}行情行数", "ERROR", 0, "该模块不可用或没有有效交易行")]
-    duplicates = int(frame.duplicated(["date", "code"]).sum())
+    dup_cols = ["date", "code"] if "code" in frame.columns else ["date"]
+    duplicates = int(frame.duplicated(dup_cols).sum()) if all(col in frame.columns for col in dup_cols) else 0
     checks.append(_check(f"{label}日期代码重复行", "WARN" if duplicates else "OK", duplicates))
     for col in ["开盘价", "收盘价", "最低价", "最高价", volume_field]:
         if col not in frame.columns:
@@ -149,6 +150,8 @@ def _market_value_checks(label: str, frame: pd.DataFrame, volume_field: str) -> 
     if volume_field in frame.columns:
         zero_volume_rows = int((pd.to_numeric(frame[volume_field], errors="coerce").fillna(0) <= 0).sum())
         checks.append(_check(f"{label}零成交量行", "WARN" if zero_volume_rows else "OK", zero_volume_rows, "零成交量行不进入指标均量计算"))
+    invalid_trading_rows = int(frame.attrs.get("invalid_trading_rows", 0) or 0)
+    checks.append(_check(f"{label}无效交易行过滤数", "WARN" if invalid_trading_rows else "OK", invalid_trading_rows, "open/close/high/low/volume缺失或非正的行不进入指标计算"))
     return checks
 
 

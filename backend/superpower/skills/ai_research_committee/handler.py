@@ -103,7 +103,7 @@ def _payload(context: AgentContext) -> dict[str, Any]:
             "不得改变任何 buy_signal、sell_signal、TL state、score、rank 或 risk level",
             "不得新增表格中不存在的标的",
             "不得承诺收益",
-            "短样本只能称为历史诊断，不能称为策略有效性证明",
+            "短样本只能称为历史诊断，不能作为收益结论",
         ],
     }
 

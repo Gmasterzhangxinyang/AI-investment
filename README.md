@@ -53,6 +53,7 @@
 - [Dashboard 稳定数据契约](docs/DASHBOARD_SCHEMA.md)
 - [报告话术与合规口径](docs/REPORTING_POLICY.md)
 - [数据质量规则](docs/DATA_QUALITY_RULES.md)
+- [稳定性交付检查表](docs/STABILITY_CHECKLIST.md)
 
 ## 产品界面
 
@@ -273,6 +274,7 @@ Tool 是底层工具层，例如：
 - 价格低于最低价，默认 100。
 - 价格高于上限，默认 140。
 - 已发赎回公告。
+- 触发强赎价且未见有效不强赎公告，默认硬排除。
 - 高 YTM 异常。
 - 严重负 YTM。
 - 低评级。
@@ -382,8 +384,15 @@ PYTHONPATH=backend python -m superpower.cli.run_daily \
 outputs/latest/dashboard.json
 outputs/latest/audit.json
 outputs/AI投研日报-Superpower-YYYYMMDD.xlsx
+outputs/AI投研日报-Superpower-YYYYMMDD.pdf
 data/research.db
 logs/agent_audit_<run_id>.jsonl
+```
+
+默认情况下，独立 QA audit 如果不是 PASS，不会阻断日报生成；结果会写入 `outputs/latest/audit.json` 和 `dashboard.run_info.warnings`。如果需要 CI/交付闸门严格失败，可追加：
+
+```bash
+--strict-audit
 ```
 
 ## 配置文件
@@ -438,7 +447,8 @@ tests/                    # 冒烟测试和商业组件测试
 ## 测试
 
 ```bash
-python -m compileall backend
+python -m compileall backend/superpower
+pytest
 python tests/smoke.py
 ```
 
@@ -451,7 +461,7 @@ python tests/smoke.py
 - TL 第一版只做状态诊断，不模拟收益。
 - 可转债当前是单日截面打分，若要正式回测，需要历史每日可转债截面。
 - 新闻、公告、宏观数据尚未作为正式数据源接入。
-- 本项目不承诺策略收益，回测只能说明历史规则表现。
+- 本项目不承诺策略收益，回测仅为历史诊断，不代表未来收益。
 
 ## Roadmap
 

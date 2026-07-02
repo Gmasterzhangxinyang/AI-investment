@@ -80,7 +80,7 @@ max_per_industry_l1 = 2
 max_per_industry_l2 = 2
 no_redemption_valid_days = 180
 exclude_st_stock = true
-exclude_unresolved_redemption_trigger = false
+exclude_unresolved_redemption_trigger = true
 ```
 
 评级硬排除列表：
@@ -283,12 +283,12 @@ min_remaining_size_hard_exclude = 0.5
 当前默认：
 
 ```text
-exclude_unresolved_redemption_trigger = false
+exclude_unresolved_redemption_trigger = true
 ```
 
-因此，触发强赎价但未见有效公告的标的不会被硬剔除，但会被扣分和提示风险。
+因此，触发强赎价但未见有效不强赎公告的标的会被硬剔除，不能进入普通 Top10。
 
-如果设置为 `true`，则以下状态会被硬排除：
+如果设置为 `false`，以下状态会保留观察但强扣分和提示风险：
 
 ```text
 触发强赎价，未见有效公告
@@ -738,4 +738,3 @@ Top10
 - 公告文本没有直接联网抓取，依赖客户 Excel 中的公告日期字段。
 - 低价格、高 YTM、评级、ST、强赎等风险优先于打分。
 - 模型不承诺收益，只用于筛选、排序和风险解释。
-

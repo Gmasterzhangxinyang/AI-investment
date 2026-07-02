@@ -42,7 +42,7 @@ def sanitize_text(value: Any) -> str:
     for original, replacement in REPLACEMENTS.items():
         text = text.replace(original, replacement)
     for phrase in BANNED_PHRASES:
-        text = text.replace(phrase, "需人工复核")
+        text = _replace_unsafe_phrase(text, phrase, "需人工复核")
     return text.replace(protected, DISCLAIMER)
 
 
@@ -51,12 +51,22 @@ def safety_issues(value: Any) -> list[str]:
     text = text.replace(DISCLAIMER, "")
     issues: list[str] = []
     for phrase in BANNED_PHRASES:
-        if phrase not in text:
-            continue
-        if _is_negated_compliance_context(text, phrase):
-            continue
-        issues.append(phrase)
+        if _has_unnegated_phrase(text, phrase):
+            issues.append(phrase)
     return issues
+
+
+def _has_unnegated_phrase(text: str, phrase: str) -> bool:
+    cursor = 0
+    while True:
+        idx = text.find(phrase, cursor)
+        if idx < 0:
+            return False
+        sentence_start = max(text.rfind(mark, 0, idx) for mark in ("。", "！", "？", "?", "!", "\n", "；", ";"))
+        sentence = text[sentence_start + 1 : idx + len(phrase)]
+        if not _is_negated_compliance_context(sentence, phrase):
+            return True
+        cursor = idx + len(phrase)
 
 
 def _is_negated_compliance_context(text: str, phrase: str) -> bool:
@@ -65,6 +75,22 @@ def _is_negated_compliance_context(text: str, phrase: str) -> bool:
         return False
     left = text[max(0, start - 12) : start]
     return any(token in left for token in ["不构成", "不承诺", "不得", "不能", "禁止", "避免", "无任何"])
+
+
+def _replace_unsafe_phrase(text: str, phrase: str, replacement: str) -> str:
+    cursor = 0
+    parts: list[str] = []
+    while True:
+        idx = text.find(phrase, cursor)
+        if idx < 0:
+            parts.append(text[cursor:])
+            break
+        parts.append(text[cursor:idx])
+        sentence_start = max(text.rfind(mark, 0, idx) for mark in ("。", "！", "？", "?", "!", "\n", "；", ";"))
+        sentence = text[sentence_start + 1 : idx + len(phrase)]
+        parts.append(phrase if _is_negated_compliance_context(sentence, phrase) else replacement)
+        cursor = idx + len(phrase)
+    return "".join(parts)
 
 
 def sanitize_frame(frame: pd.DataFrame) -> pd.DataFrame:

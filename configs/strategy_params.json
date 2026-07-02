@@ -31,7 +31,7 @@
     "max_per_industry_l2": 2,
     "no_redemption_valid_days": 180,
     "exclude_st_stock": true,
-    "exclude_unresolved_redemption_trigger": false,
+    "exclude_unresolved_redemption_trigger": true,
     "hard_exclude_ratings": [
       "A",
       "A-",
