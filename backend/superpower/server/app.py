@@ -108,15 +108,17 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def _start_refresh(self) -> None:
-        if not self.etf_file.exists() or not self.tl_file.exists():
+        if not _any_configured_source_file_exists(self.etf_file, self.tl_file, self.cb_file):
             self._send_json(
                 {
                     "status": "failed",
-                    "message": "Configured source Excel files are missing.",
+                    "message": "All configured source Excel files are missing.",
                     "etfFile": str(self.etf_file),
                     "tlFile": str(self.tl_file),
+                    "cbFile": str(self.cb_file) if self.cb_file else "",
                     "etfFileExists": self.etf_file.exists(),
                     "tlFileExists": self.tl_file.exists(),
+                    "cbFileExists": self.cb_file.exists() if self.cb_file else False,
                 },
                 status=HTTPStatus.BAD_REQUEST,
             )
@@ -423,7 +425,7 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the local Superpower research dashboard server.")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--root-dir", type=Path, default=Path(__file__).resolve().parents[3])
     parser.add_argument("--etf-file", type=Path, default=None)
     parser.add_argument("--tl-file", type=Path, default=None)
@@ -465,6 +467,17 @@ def load_data_sources(root_dir: Path) -> dict[str, str]:
 def _resolve_config_path(root_dir: Path, path: Path) -> Path:
     expanded = path.expanduser()
     return expanded.resolve() if expanded.is_absolute() else (root_dir / expanded).resolve()
+
+
+def _configured_source_files(etf_file: Path, tl_file: Path, cb_file: Path | None) -> dict[str, Path]:
+    files = {"etf": etf_file, "tl": tl_file}
+    if cb_file is not None:
+        files["convertible_bond"] = cb_file
+    return files
+
+
+def _any_configured_source_file_exists(etf_file: Path, tl_file: Path, cb_file: Path | None) -> bool:
+    return any(path.exists() for path in _configured_source_files(etf_file, tl_file, cb_file).values())
 
 
 def _deep_review_payload(dashboard: dict[str, Any]) -> dict[str, Any]:

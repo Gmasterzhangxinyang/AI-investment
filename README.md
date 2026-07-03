@@ -70,35 +70,26 @@ http://127.0.0.1:8766/frontend/
 可选AI层         只解释证据，不生成信号，不改排名
 ```
 
-```mermaid
-flowchart TB
-    Input["数据输入层<br/>Wind Excel / 策略参数 / 持仓状态"]
-    Compute["确定性计算层<br/>数据质检 / 技术指标 / ETF / TL / 可转债"]
-    Evidence["证据存储层<br/>dashboard.json / SQLite / Excel日报 / Audit日志"]
-    Product["产品交互层<br/>Web工作台 / 投研问答 / PDF导出"]
-    AI["可选AI层<br/>解释证据 / 复核口径 / 输出校验"]
-
-    Input --> Compute --> Evidence --> Product
-    Product -.按需读取.-> Evidence
-    Product -.可选调用.-> AI
-    AI -.只解释，不改信号.-> Product
+```text
+Wind Excel / 策略参数 / 持仓状态
+  -> 数据质检 / 技术指标 / ETF / TL / 可转债规则
+  -> dashboard.json / SQLite / Excel日报 / Audit日志
+  -> Web工作台 / 投研问答 / PDF导出
+  -> 可选AI解释证据、复核口径和输出校验
 ```
 
 ### 日更流水线
 
-```mermaid
-flowchart LR
-    A["读取配置"] --> B["读取Excel"]
-    B --> C["数据质检"]
-    C --> D["计算指标"]
-    D --> E["生成三类资产结果"]
-    E --> F["历史诊断与风险摘要"]
-    F --> G["生成dashboard与Excel"]
-    G --> H["写入SQLite"]
-
-    E -.ETF.-> E1["建仓候选 / 平仓提示 / 关注池"]
-    E -.TL.-> E2["不做交易 / 关注交易 / 建仓候选"]
-    E -.可转债.-> E3["Top10 / 候选池 / 排除清单"]
+```text
+读取配置
+  -> 归档源文件
+  -> 读取 Excel
+  -> 数据质检
+  -> 计算指标
+  -> 生成 ETF / TL / 可转债结果
+  -> 历史诊断与风险摘要
+  -> 生成 dashboard 与 Excel
+  -> 写入 SQLite
 ```
 
 ### 代码组织
@@ -186,6 +177,7 @@ PYTHONPATH=backend python -m superpower.cli.run_daily \
 
 - 主流程失败才返回非 0。
 - QA audit 非 PASS 不阻断日报生成，只写入 `outputs/latest/audit.json` 和 `dashboard.run_info.warnings`。
+- 缺 ETF、TL 或可转债单个 Excel 时，CLI 和前端刷新都会继续运行；缺失模块降级为不可用并写入数据质量提示。
 - 需要交付闸门严格失败时，追加 `--strict-audit`。
 - 需要跳过独立 audit 时，追加 `--skip-audit`。
 

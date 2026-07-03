@@ -8,7 +8,7 @@
    缺少单个 Excel 不阻塞全局流程；对应模块输出不可用状态和审计原因。
 
 2. 缺数据降级。
-   缺 ETF、TL 或可转债任一文件时，其他模块继续生成；缺失模块写入 `data_quality` 和 `run_info.warnings`。
+   缺 ETF、TL 或可转债任一文件时，CLI 和前端刷新都继续运行；缺失模块写入 `data_quality` 和 `run_info.warnings`。只有全部配置的核心源 Excel 都不存在时，前端刷新才会在启动前返回错误。
 
 3. 固定 dashboard schema。
    新增并固定 `run_info/data_quality/etf/tl/convertible_bond/report_summary` 结构，同时保留旧字段兼容前端。

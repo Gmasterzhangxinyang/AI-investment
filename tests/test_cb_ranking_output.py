@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -11,6 +12,12 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from superpower.skills.convertible_bond_ranking.handler import rank_convertible_bonds
+
+
+def test_strategy_params_enable_unresolved_redemption_exclusion() -> None:
+    params = json.loads((ROOT / "configs" / "strategy_params.json").read_text(encoding="utf-8"))
+
+    assert params["convertible_bond"]["exclude_unresolved_redemption_trigger"] is True
 
 
 def test_convertible_ranking_returns_score_breakdown_and_excluded_list() -> None:

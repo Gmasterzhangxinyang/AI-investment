@@ -20,9 +20,12 @@
 缺少某个 Excel 时：
 
 - 系统不崩溃。
+- CLI 和前端刷新都继续调用日更流程。
 - 对应模块输出 `unavailable` 或 `data_unavailable`。
 - `data_quality.errors` 写入原因。
 - 其他模块继续正常计算。
+
+前端只在 ETF、TL、可转债等全部配置的核心源 Excel 都不存在时，才会在启动日更前返回明确错误。
 
 ## 非交易行和零成交量
 

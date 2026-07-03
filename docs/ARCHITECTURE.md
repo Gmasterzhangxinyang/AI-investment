@@ -32,13 +32,17 @@ Agents are governance units. Each Agent declares its role, objective, required i
 | Agent | Purpose |
 |---|---|
 | ConfigAgent | Load strategy, universe, model and delivery config |
-| DataAgent | Read ETF/TL Wind Excel data |
+| SourceArchiveAgent | Archive configured source files and write a source manifest |
+| DataAgent | Read ETF, TL, and convertible-bond Wind Excel data |
 | QAAgent | Validate data quality |
 | IndicatorAgent | Calculate technical indicators |
 | PortfolioAgent | Load customer position state |
 | ETFAgent | Generate ETF signals |
 | TLAgent | Generate TL timing state |
+| ConvertibleBondAgent | Rank convertible bonds after risk filters and industry diversification |
+| BacktestAgent | Produce lightweight historical diagnostics and trade evidence |
 | RiskAgent | Summarize portfolio risk |
+| AIResearchCommitteeAgent | Run constrained AI or fallback reviews over existing evidence |
 | ExplanationAgent | Generate professional commentary |
 | ReportAgent | Write Excel report and frontend JSON |
 

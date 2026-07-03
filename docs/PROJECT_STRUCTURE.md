@@ -218,9 +218,13 @@ latest client reports under outputs/
 Run after any cleanup or code change:
 
 ```bash
-python3 -m unittest discover tests
-python3 tests/smoke.py
-python3 run_daily.py --etf-file data/wind/current/01_ETF清单和日频公式.xlsx --tl-file data/wind/current/02_TL日频公式.xlsx --cb-file data/wind/current/03_可转债数据.xlsx --root-dir .
+python -m compileall backend/superpower
+pytest
+PYTHONPATH=backend python -m superpower.cli.run_daily \
+  --etf-file data/wind/current/01_ETF清单和日频公式.xlsx \
+  --tl-file data/wind/current/02_TL日频公式.xlsx \
+  --cb-file data/wind/current/03_可转债数据.xlsx \
+  --disable-llm
 ```
 
 Expected successful daily run output includes:
@@ -230,3 +234,5 @@ status=success
 qa_status=PASS
 db_status=success
 ```
+
+QA audit is non-blocking by default. A non-PASS audit writes `outputs/latest/audit.json` and dashboard warnings; it only blocks the command when `--strict-audit` is passed.
