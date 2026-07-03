@@ -189,3 +189,15 @@ risk_notes
 confidence
 data_quality
 ```
+
+Convertible-bond rows additionally carry candidate-quality fields:
+
+```text
+qualification
+score_grade
+eligible_for_top
+not_top_reason
+quality_notes
+```
+
+`convertible_bond.top10` is a compatibility field and must contain only `qualified[:10]`; weak-watch and risk-watch rows are not used to fill the Top table.

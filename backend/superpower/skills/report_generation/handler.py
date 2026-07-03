@@ -31,6 +31,10 @@ class Skill:
         cb_top10 = context.get("cb_top10")
         cb_ranked = context.get("cb_ranked")
         cb_excluded = context.maybe("cb_excluded", pd.DataFrame())
+        cb_qualified = context.maybe("cb_qualified", cb_top10)
+        cb_weak_watch = context.maybe("cb_weak_watch", pd.DataFrame())
+        cb_risk_watch = context.maybe("cb_risk_watch", pd.DataFrame())
+        cb_quality_summary = context.maybe("cb_quality_summary", {})
         backtest_summary = context.get("backtest_summary")
         backtest_trades = context.get("backtest_trades")
         backtest_next_day_checks = _recent_next_day_checks(
@@ -61,6 +65,8 @@ class Skill:
             "TL今日状态": tl_today,
             "TL近期状态": tl_recent,
             "可转债Top10": cb_top10,
+            "可转债弱观察": cb_weak_watch,
+            "可转债风险观察": cb_risk_watch,
             "可转债全量排序": cb_ranked,
             "可转债排除清单": cb_excluded,
             "历史诊断摘要": backtest_summary,
@@ -118,6 +124,10 @@ class Skill:
                 cb_top10=cb_top10,
                 cb_ranked=cb_ranked,
                 cb_excluded=cb_excluded,
+                cb_qualified=cb_qualified,
+                cb_weak_watch=cb_weak_watch,
+                cb_risk_watch=cb_risk_watch,
+                cb_quality_summary=cb_quality_summary,
                 backtest_summary=backtest_summary,
                 backtest_next_day_checks=backtest_next_day_checks,
                 risk=risk,
@@ -214,6 +224,10 @@ def _stable_dashboard_schema(
     cb_top10: pd.DataFrame,
     cb_ranked: pd.DataFrame,
     cb_excluded: pd.DataFrame,
+    cb_qualified: pd.DataFrame,
+    cb_weak_watch: pd.DataFrame,
+    cb_risk_watch: pd.DataFrame,
+    cb_quality_summary: dict[str, Any],
     backtest_summary: pd.DataFrame,
     backtest_next_day_checks: pd.DataFrame,
     risk: pd.DataFrame,
@@ -279,13 +293,27 @@ def _stable_dashboard_schema(
             "status": _module_status(cb_ranked, quality, "可转债"),
             "counts": {
                 "top10": len(cb_top10),
+                "qualified": len(cb_qualified),
+                "weak_watch": len(cb_weak_watch),
+                "risk_watch": len(cb_risk_watch),
                 "ranked_candidates": len(cb_ranked),
                 "excluded": len(cb_excluded),
             },
             "top10": records(cb_top10),
+            "qualified": records(cb_qualified, limit=100),
+            "weak_watch": records(cb_weak_watch, limit=100),
+            "risk_watch": records(cb_risk_watch, limit=100),
             "candidates": records(cb_ranked, limit=100),
             "ranked_candidates": records(cb_ranked, limit=100),
             "excluded": records(cb_excluded, limit=200),
+            "summary": cb_quality_summary or {
+                "qualified_count": len(cb_qualified),
+                "weak_watch_count": len(cb_weak_watch),
+                "risk_watch_count": len(cb_risk_watch),
+                "excluded_count": len(cb_excluded),
+                "top_display_title": "可转债 Top10 候选" if len(cb_qualified) >= 10 else "可转债合格候选（不足 10 只）" if len(cb_qualified) else "今日无合格可转债 Top 候选",
+                "quality_message": "今日无合格可转债 Top 候选，候选池整体质量偏弱。" if not len(cb_qualified) else "",
+            },
             "warnings": _quality_module_warnings(quality, "可转债") + _industry_warning_items(cb_top10),
             "industry_concentration_warning": _industry_warning(cb_top10),
         },

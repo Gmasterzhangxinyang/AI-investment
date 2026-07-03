@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from superpower.skills.convertible_bond_ranking.handler import rank_convertible_bonds
+from superpower.skills.convertible_bond_ranking.handler import rank_convertible_bonds, split_candidate_qualification
 from superpower.skills.etf_rotation_strategy.handler import latest_etf_signals
 from superpower.skills.technical_indicators.handler import add_indicators
 from superpower.skills.tl_timing_strategy.handler import tl_state
@@ -76,6 +76,7 @@ def audit_latest(root_dir: Path, etf_file: Path, tl_file: Path, cb_file: Path | 
     etf_all, etf_buys, etf_sells, etf_watchlist, etf_details = latest_etf_signals(etf_indicators, positions, params)
     tl_today, tl_recent = tl_state(tl_indicators, params)
     cb_ranked = rank_convertible_bonds(cb_data, params) if not cb_data.empty else pd.DataFrame()
+    cb_qualified, _, _ = split_candidate_qualification(cb_ranked) if not cb_ranked.empty else (pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
 
     report_date = max(etf_indicators["date"].max(), tl_indicators["date"].max()).strftime("%Y%m%d")
     report_path = _resolve_report_path(root_dir, dashboard.get("reportPath", ""))
@@ -87,7 +88,7 @@ def audit_latest(root_dir: Path, etf_file: Path, tl_file: Path, cb_file: Path | 
         check_equal("ETF buy count", len(etf_buys), dashboard_summary_value(dashboard, "ETF建仓候选数量")),
         check_equal("ETF watchlist count", len(etf_watchlist), dashboard_summary_value(dashboard, "ETF关注池数量")),
         check_equal("ETF sell count", len(etf_sells), dashboard_summary_value(dashboard, "ETF平仓提示数量")),
-        check_equal("CB top10 count", min(len(cb_ranked), 10), dashboard_summary_value(dashboard, "可转债Top10数量")),
+        check_equal("CB top10 count", min(len(cb_qualified), 10), dashboard_summary_value(dashboard, "可转债Top10数量")),
         check_equal("TL state", str(tl_today.iloc[0]["state"]), dashboard_summary_value(dashboard, "TL今日状态")),
         check_float("TL close", tl_today.iloc[0]["收盘价"], dashboard_summary_value(dashboard, "TL收盘价"), 1e-4),
         check_float("TL daily MACD histogram", tl_today.iloc[0]["macd_hist"], dashboard_summary_value(dashboard, "TL日线MACD柱"), 1e-6),

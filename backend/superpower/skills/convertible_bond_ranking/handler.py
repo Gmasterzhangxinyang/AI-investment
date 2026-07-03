@@ -59,6 +59,11 @@ OUTPUT_COLUMNS = [
     "metrics",
     "rule_hits",
     "risk_notes",
+    "qualification",
+    "score_grade",
+    "eligible_for_top",
+    "not_top_reason",
+    "quality_notes",
     "confidence",
     "data_quality",
     "notes",
@@ -79,6 +84,11 @@ EXCLUDED_COLUMNS = [
     "remaining_size",
     "redemption_status",
     "excluded_reason",
+    "qualification",
+    "score_grade",
+    "eligible_for_top",
+    "not_top_reason",
+    "quality_notes",
 ]
 
 
@@ -91,19 +101,29 @@ class Skill:
             context.put("cb_ranked", empty)
             context.put("cb_top10", empty)
             context.put("cb_excluded", _empty_excluded())
+            context.put("cb_qualified", empty)
+            context.put("cb_weak_watch", empty)
+            context.put("cb_risk_watch", empty)
+            context.put("cb_quality_summary", _qualification_summary(empty, empty, empty, _empty_excluded()))
             return {"cb_rows": 0, "cb_candidates": 0, "cb_top10": 0, "status": "waiting_for_data"}
 
         ranked, excluded = rank_convertible_bonds(cb_data, params, include_excluded=True)
         config = params.get("convertible_bond", {})
+        qualified, weak_watch, risk_watch = split_candidate_qualification(ranked)
         top10 = _select_diversified_top(
-            ranked,
+            qualified,
             top_n=int(config.get("top_n", 10)),
             max_per_l1=int(config.get("max_per_industry_l1", 2)),
             max_per_l2=int(config.get("max_per_industry_l2", 2)),
         )
+        quality_summary = _qualification_summary(qualified, weak_watch, risk_watch, excluded)
         context.put("cb_ranked", ranked)
         context.put("cb_top10", top10)
         context.put("cb_excluded", excluded)
+        context.put("cb_qualified", qualified)
+        context.put("cb_weak_watch", weak_watch)
+        context.put("cb_risk_watch", risk_watch)
+        context.put("cb_quality_summary", quality_summary)
         return {
             "cb_rows": len(cb_data),
             "cb_candidates": len(ranked),
@@ -283,9 +303,18 @@ def rank_convertible_bonds(
     eligible["metrics"] = [_metrics(row) for _, row in eligible.iterrows()]
     eligible["rule_hits"] = [_rule_hits(row) for _, row in eligible.iterrows()]
     eligible["risk_notes"] = eligible["risk_flags"].map(_risk_note_list)
+    eligible["score_grade"] = eligible["score"].map(_score_grade)
+    eligible["quality_notes"] = [_quality_notes(row) for _, row in eligible.iterrows()]
+    qualification = [_qualification(row) for _, row in eligible.iterrows()]
+    eligible["qualification"] = [item["qualification"] for item in qualification]
+    eligible["eligible_for_top"] = [item["eligible_for_top"] for item in qualification]
+    eligible["not_top_reason"] = [item["not_top_reason"] for item in qualification]
     eligible["data_quality"] = "OK"
     eligible["confidence"] = eligible["risk_level"].map({"低": "high", "中": "medium", "高": "low"}).fillna("medium")
     eligible.loc[eligible["redemption_data_missing"].fillna(False).astype(bool), "confidence"] = "low"
+    eligible.loc[eligible["qualification"] == "qualified", "action"] = "进入可转债Top10候选池"
+    eligible.loc[eligible["qualification"] == "weak_watch", "action"] = "弱观察候选，仅代表相对排序靠前，不构成高质量候选"
+    eligible.loc[eligible["qualification"] == "risk_watch", "action"] = "风险观察，不进入Top候选"
 
     output = eligible[OUTPUT_COLUMNS].copy()
     output = output.sort_values(
@@ -759,7 +788,189 @@ def _excluded_output(df: pd.DataFrame) -> pd.DataFrame:
     if excluded.empty:
         return _empty_excluded()
     excluded["excluded_reason"] = excluded["exclusion_reason"]
+    excluded["qualification"] = "excluded"
+    excluded["score_grade"] = "E"
+    excluded["eligible_for_top"] = False
+    excluded["not_top_reason"] = excluded["excluded_reason"]
+    excluded["quality_notes"] = excluded["excluded_reason"].map(lambda value: [part for part in str(value).split("；") if part])
     return excluded[EXCLUDED_COLUMNS].sort_values(["excluded_reason", "bond_code"]).reset_index(drop=True)
+
+
+def split_candidate_qualification(ranked: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    if ranked.empty:
+        empty = _empty_output()
+        return empty, empty, empty
+    ranked = _ensure_qualification_columns(ranked)
+    qualified = ranked[ranked["qualification"] == "qualified"].copy().reset_index(drop=True)
+    weak_watch = ranked[ranked["qualification"] == "weak_watch"].copy().reset_index(drop=True)
+    risk_watch = ranked[ranked["qualification"] == "risk_watch"].copy().reset_index(drop=True)
+    for frame in (qualified, weak_watch, risk_watch):
+        if not frame.empty:
+            frame["rank"] = np.arange(1, len(frame) + 1)
+    return qualified[OUTPUT_COLUMNS] if not qualified.empty else _empty_output(), weak_watch[OUTPUT_COLUMNS] if not weak_watch.empty else _empty_output(), risk_watch[OUTPUT_COLUMNS] if not risk_watch.empty else _empty_output()
+
+
+def _ensure_qualification_columns(ranked: pd.DataFrame) -> pd.DataFrame:
+    ranked = ranked.copy()
+    if "score_grade" not in ranked.columns:
+        ranked["score_grade"] = ranked.get("score", pd.Series(dtype=float)).map(_score_grade)
+    if "quality_notes" not in ranked.columns:
+        ranked["quality_notes"] = [_quality_notes(row) for _, row in ranked.iterrows()]
+    needs_qualification = (
+        not {"qualification", "eligible_for_top", "not_top_reason"}.issubset(set(ranked.columns))
+        or ranked["qualification"].isna().any()
+        or ranked["eligible_for_top"].isna().any()
+    )
+    if needs_qualification:
+        qualification = [_qualification(row) for _, row in ranked.iterrows()]
+        ranked["qualification"] = [item["qualification"] for item in qualification]
+        ranked["eligible_for_top"] = [item["eligible_for_top"] for item in qualification]
+        ranked["not_top_reason"] = [item["not_top_reason"] for item in qualification]
+    for column in OUTPUT_COLUMNS:
+        if column not in ranked.columns:
+            ranked[column] = None
+    return ranked
+
+
+def _qualification_summary(
+    qualified: pd.DataFrame,
+    weak_watch: pd.DataFrame,
+    risk_watch: pd.DataFrame,
+    excluded: pd.DataFrame,
+) -> dict[str, Any]:
+    qualified_count = len(qualified)
+    if qualified_count >= 10:
+        title = "可转债 Top10 候选"
+        message = f"今日合格可转债候选 {qualified_count} 只，首页展示前10只。"
+    elif qualified_count > 0:
+        title = "可转债合格候选（不足 10 只）"
+        message = f"今日合格可转债候选 {qualified_count} 只，不从弱观察或风险观察候选中补足Top10。"
+    else:
+        title = "今日无合格可转债 Top 候选"
+        max_score = _max_score(weak_watch, risk_watch)
+        if max_score is None:
+            message = "今日无合格可转债 Top 候选，候选池整体质量偏弱。"
+        else:
+            message = f"今日无合格可转债 Top 候选；最高分仅 {max_score:.2f}，未达到合格候选阈值；候选池整体质量偏弱。"
+    return {
+        "qualified_count": qualified_count,
+        "weak_watch_count": len(weak_watch),
+        "risk_watch_count": len(risk_watch),
+        "excluded_count": len(excluded),
+        "top_display_title": title,
+        "quality_message": message,
+    }
+
+
+def _max_score(*frames: pd.DataFrame) -> float | None:
+    values: list[float] = []
+    for frame in frames:
+        if not frame.empty and "score" in frame.columns:
+            values.extend(pd.to_numeric(frame["score"], errors="coerce").dropna().astype(float).tolist())
+    return max(values) if values else None
+
+
+def _qualification(row: pd.Series) -> dict[str, Any]:
+    score = _num(row.get("score"))
+    premium = _num(row.get("conversion_premium_rate"))
+    ytm = _num(row.get("ytm"))
+    remaining_size = _num(row.get("remaining_size"))
+    risk_notes = _risk_note_list(row.get("risk_flags"))
+    risk_note_count = 0 if risk_notes == ["无明显风控扣分项"] else len(risk_notes)
+    top_reasons = _top_ineligible_reasons(row)
+    risk_watch_reasons = _risk_watch_reasons(row, risk_note_count)
+    if risk_watch_reasons:
+        return {
+            "qualification": "risk_watch",
+            "eligible_for_top": False,
+            "not_top_reason": "；".join(risk_watch_reasons),
+        }
+    if pd.notna(score) and score >= 50 and not top_reasons:
+        return {"qualification": "qualified", "eligible_for_top": True, "not_top_reason": ""}
+    weak_reasons: list[str] = []
+    if pd.notna(score) and score < 50:
+        weak_reasons.append("评分低于50，仅可弱观察")
+    weak_reasons.extend(top_reasons)
+    return {
+        "qualification": "weak_watch",
+        "eligible_for_top": False,
+        "not_top_reason": "；".join(weak_reasons or ["弱观察候选，仅代表相对排序靠前，不构成高质量候选"]),
+    }
+
+
+def _top_ineligible_reasons(row: pd.Series) -> list[str]:
+    reasons: list[str] = []
+    score = _num(row.get("score"))
+    premium = _num(row.get("conversion_premium_rate"))
+    ytm = _num(row.get("ytm"))
+    remaining_size = _num(row.get("remaining_size"))
+    flags = str(row.get("risk_flags") or "")
+    if pd.isna(score) or score < 50:
+        reasons.append("评分低于50")
+    if str(row.get("risk_level")) == "高":
+        reasons.append("风险等级为高")
+    if pd.notna(premium) and premium > 35:
+        reasons.append("转股溢价率高于35%")
+    if pd.notna(ytm) and ytm < -3:
+        reasons.append("到期收益率低于-3%")
+    if pd.notna(remaining_size) and remaining_size < 5:
+        reasons.append("存续规模低于5")
+    if "最新扣非净利润为负" in flags:
+        reasons.append("最新扣非净利润为负")
+    if "增长率极端，评分已截尾" in flags:
+        reasons.append("增长率极端，评分已截尾")
+    return reasons
+
+
+def _risk_watch_reasons(row: pd.Series, risk_note_count: int) -> list[str]:
+    reasons: list[str] = []
+    score = _num(row.get("score"))
+    premium = _num(row.get("conversion_premium_rate"))
+    ytm = _num(row.get("ytm"))
+    remaining_size = _num(row.get("remaining_size"))
+    if pd.notna(score) and score < 30:
+        reasons.append("评分低于30")
+    if pd.notna(score) and score == 0:
+        reasons.append("评分为0")
+    if str(row.get("risk_level")) == "高":
+        reasons.append("风险等级为高")
+    if risk_note_count >= 3:
+        reasons.append("风险提示不少于3项")
+    if pd.notna(premium) and premium >= 40:
+        reasons.append("转股溢价率不低于40%")
+    if pd.notna(ytm) and ytm < -3:
+        reasons.append("到期收益率低于-3%")
+    if pd.notna(remaining_size) and remaining_size < 3:
+        reasons.append("存续规模低于3")
+    return reasons
+
+
+def _score_grade(score: Any) -> str:
+    value = _num(score)
+    if pd.isna(value):
+        return "E"
+    if value >= 70:
+        return "A"
+    if value >= 55:
+        return "B"
+    if value >= 40:
+        return "C"
+    if value >= 25:
+        return "D"
+    return "E"
+
+
+def _quality_notes(row: pd.Series) -> list[str]:
+    notes = _risk_note_list(row.get("risk_flags"))
+    if notes == ["无明显风控扣分项"]:
+        notes = []
+    if bool(row.get("latest_profit_negative")) and not any("最新扣非净利润为负" in note for note in notes):
+        notes.append("最新扣非净利润为负")
+    if bool(row.get("growth_base_unstable")) and not any("利润基数异常" in note for note in notes):
+        notes.append("利润基数异常")
+    if not notes:
+        notes.append("无明显风控扣分项")
+    return notes
 
 
 def _safe_float(value: Any) -> float | None:
@@ -778,8 +989,8 @@ def _select_diversified_top(ranked: pd.DataFrame, top_n: int, max_per_l1: int, m
     l1_counts: dict[str, int] = {}
     l2_counts: dict[str, int] = {}
     for index, row in ranked.iterrows():
-        l1 = str(row.get("sw_l1") or "未分类")
-        l2 = str(row.get("sw_l2") or "未分类")
+        l1 = _text_or_default(row.get("sw_l1"), "未分类")
+        l2 = _text_or_default(row.get("sw_l2"), "未分类")
         if l1_counts.get(l1, 0) >= max_per_l1 or l2_counts.get(l2, 0) >= max_per_l2:
             continue
         selected.append(index)
@@ -798,6 +1009,12 @@ def _select_diversified_top(ranked: pd.DataFrame, top_n: int, max_per_l1: int, m
     top = ranked.loc[selected].copy().reset_index(drop=True)
     top["rank"] = np.arange(1, len(top) + 1)
     return top[OUTPUT_COLUMNS]
+
+
+def _text_or_default(value: Any, default: str) -> str:
+    if value is None or pd.isna(value) or str(value).strip() == "":
+        return default
+    return str(value)
 
 
 def _higher_better(series: pd.Series) -> pd.Series:

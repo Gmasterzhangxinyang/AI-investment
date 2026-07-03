@@ -33,6 +33,10 @@ def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
         cb_top10=pd.DataFrame(),
         cb_ranked=pd.DataFrame(),
         cb_excluded=pd.DataFrame(),
+        cb_qualified=pd.DataFrame(),
+        cb_weak_watch=pd.DataFrame(),
+        cb_risk_watch=pd.DataFrame(),
+        cb_quality_summary={},
         backtest_summary=pd.DataFrame(),
         backtest_next_day_checks=pd.DataFrame(),
         risk=pd.DataFrame(),
@@ -47,4 +51,8 @@ def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
     assert "all_signals" in payload["etf"]
     assert payload["tl"]["status"] == "unavailable"
     assert "candidates" in payload["convertible_bond"]
+    assert "qualified" in payload["convertible_bond"]
+    assert "weak_watch" in payload["convertible_bond"]
+    assert "risk_watch" in payload["convertible_bond"]
+    assert "summary" in payload["convertible_bond"]
     assert "key_points" in payload["report_summary"]

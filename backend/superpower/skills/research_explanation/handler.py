@@ -72,7 +72,7 @@ def deterministic_summary(
     lines = [
         f"ETF建仓候选 {len(buys)} 个，关注池 {len(watchlist)} 个，平仓提示 {len(sells)} 个。",
         f"TL日频状态为“{tl_state}”。",
-        f"可转债Top10数量为 {len(cb_top10)} 个。",
+        f"可转债合格Top候选数量为 {len(cb_top10)} 个。",
         "当前解释由确定性模板生成；配置开启且存在 OPENAI_API_KEY 后，可由大模型生成解释文本，但交易信号仍由规则代码生成。",
     ]
     if not buys.empty:
@@ -89,7 +89,9 @@ def deterministic_summary(
         lines.append(f"当前持仓中触发平仓提示的是{top_sell['name']}，触发因素：{top_sell['signal_reason']}。")
     if not cb_top10.empty:
         top_cb = cb_top10.iloc[0]
-        lines.append(f"可转债评分最高的是{top_cb['bond_name']}，评分{top_cb['score']}，原因：{top_cb['rank_reason']}。")
+        lines.append(f"可转债合格候选中评分最高的是{top_cb['bond_name']}，评分{top_cb['score']}，原因：{top_cb['rank_reason']}。")
+    else:
+        lines.append("今日无合格可转债Top候选，弱观察和风险观察不写成推荐。")
     if not backtest_summary.empty:
         warn_count = int((backtest_summary["level"] == "WARN").sum())
         lines.append(f"历史诊断共有 {warn_count} 个 WARN；短样本时只能说明流程与信号频率，不能作为正式收益验证。")

@@ -645,9 +645,16 @@ function render() {
     ["deducted_profit_growth", "三年扣非增速"],
     ["profit_growth_acceleration", "25年加速"],
     ["score", "评分"],
+    ["score_grade", "等级"],
+    ["qualification", "资格"],
+    ["not_top_reason", "未入Top原因"],
     ["risk_flags", "风险提示"],
     ["rank_reason", "评分依据"],
   ];
+  const cb = data.convertible_bond || {};
+  const cbSummary = cb.summary || {};
+  const cbTopRows = cb.top10 || data.cbTop10 || [];
+  const cbRankedRows = cb.candidates || cb.ranked_candidates || data.cbRanked || [];
   renderModuleKpis(summary);
   renderTable("buy-table", data.etfBuyCandidates || [], etfBuyColumns, "buy");
   renderTable("sell-table", data.etfSellAlerts || [], etfSellColumns, "sell");
@@ -660,9 +667,10 @@ function render() {
   renderTLPanel(data.tlToday?.[0] || {});
   renderTable("tl-recent-table", data.tlRecent || [], tlRecentColumns);
   renderTable("tl-panel-recent-table", data.tlRecent || [], tlRecentColumns);
-  renderTable("cb-table", data.cbTop10 || [], cbColumns, "watch");
-  renderTable("cb-top-table", data.cbTop10 || [], cbColumns, "watch");
-  renderTable("cb-ranked-table", data.cbRanked || [], cbColumns, "watch");
+  renderCbSummary(cbSummary);
+  renderTable("cb-table", cbTopRows, cbColumns, "watch");
+  renderTable("cb-top-table", cbTopRows, cbColumns, "watch");
+  renderTable("cb-ranked-table", cbRankedRows, cbColumns, "watch");
   renderTable(
     "cb-quality-table",
     (data.dataQuality || []).filter((row) => String(row.item || "").includes("可转债") || String(row.item || "").includes("强赎") || String(row.item || "").includes("YTM") || String(row.item || "").includes("评级")),
@@ -755,10 +763,11 @@ function renderModuleKpis(summary) {
     ["平仓提示", pick(summary, "ETF平仓提示数量")],
   ];
   const cbItems = [
-    ["Top10", pick(summary, "可转债Top10数量")],
-    ["候选池", state.data?.cbRanked?.length ?? "--"],
+    ["合格候选", state.data?.convertible_bond?.summary?.qualified_count ?? pick(summary, "可转债Top10数量")],
+    ["弱观察", state.data?.convertible_bond?.summary?.weak_watch_count ?? "--"],
+    ["风险观察", state.data?.convertible_bond?.summary?.risk_watch_count ?? "--"],
+    ["候选池", state.data?.convertible_bond?.candidates?.length ?? state.data?.cbRanked?.length ?? "--"],
     ["质检提醒", (state.data?.dataQuality || []).filter((row) => String(row.item || "").includes("可转债") && row.status !== "OK").length],
-    ["风险项", pickSummary(summary, "系统已识别风险项", "数据校验异常项")],
   ];
   const renderItems = (id, items) => {
     const node = document.getElementById(id);
@@ -769,6 +778,13 @@ function renderModuleKpis(summary) {
   };
   renderItems("etf-module-kpis", etfItems);
   renderItems("cb-module-kpis", cbItems);
+}
+
+function renderCbSummary(summary) {
+  const title = document.getElementById("cb-top-title");
+  const message = document.getElementById("cb-quality-message");
+  if (title) title.textContent = summary.top_display_title || "可转债 Top10 候选";
+  if (message) message.textContent = summary.quality_message || "";
 }
 
 function renderAICommittee(rows) {

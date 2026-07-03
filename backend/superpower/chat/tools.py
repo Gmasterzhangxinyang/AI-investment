@@ -203,19 +203,23 @@ class ResearchToolbox:
         )
 
     def get_convertible_top10(self) -> ToolResult:
-        rows = self.dashboard.get("cbTop10", [])
+        cb = self.dashboard.get("convertible_bond") or {}
+        rows = cb.get("top10") or self.dashboard.get("cbTop10", [])
+        summary = cb.get("summary") or {}
         ranked = self.repository.get_convertible_rankings(limit=30) if self.repository is not None else []
         raw_rows = self._agent_metric("convertible-bond-agent", "metric_cb_rows")
         candidates = self._agent_metric("convertible-bond-agent", "metric_cb_candidates")
         top10_count = self._agent_metric("convertible-bond-agent", "metric_cb_top10")
+        quality_message = summary.get("quality_message") or ""
         return ToolResult(
             tool="get_convertible_top10",
             title="Convertible bond top10",
-            source="dashboard.cbTop10 + sqlite.convertible_bond_snapshots",
+            source="dashboard.convertible_bond.top10 + sqlite.convertible_bond_snapshots",
             summary=(
                 f"可转债原始有效行 {raw_rows if raw_rows is not None else '--'} 条，"
                 f"风控后候选 {candidates if candidates is not None else len(ranked)} 条，"
-                f"Top10 当前 {top10_count if top10_count is not None else len(rows)} 条。"
+                f"合格Top候选当前 {top10_count if top10_count is not None else len(rows)} 条。"
+                f"{quality_message}"
             ),
             data={
                 "raw_rows": raw_rows,
@@ -223,6 +227,10 @@ class ResearchToolbox:
                 "top10_count": top10_count if top10_count is not None else len(rows),
                 "database_ranked_count": len(ranked),
                 "top10": rows[:10],
+                "qualified": cb.get("qualified") or rows[:10],
+                "weak_watch": cb.get("weak_watch") or [],
+                "risk_watch": cb.get("risk_watch") or [],
+                "summary": summary,
                 "ranked_sample": ranked[:30],
             },
         )
