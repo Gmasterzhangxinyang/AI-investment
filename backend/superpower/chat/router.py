@@ -13,6 +13,9 @@ class ChatRouter:
         text = question.lower()
         entities = self._extract_entities(question, dashboard)
 
+        if (entities.get("code") or entities.get("name")) and "etf" in text:
+            if any(token in text for token in ["状态", "怎么样", "如何", "哪里", "问题", "量能", "趋势", "原因", "为什么", "触发", "分析", "解释"]):
+                return ChatIntent("etf_detail", 0.94, entities)
         if any(token in text for token in ["数据库", "db", "sqlite"]):
             if any(token in text for token in ["标的", "名字", "名称", "名单", "有啥", "有什么", "所有", "列表", "列出"]):
                 return ChatIntent("asset_list", 0.95, entities)
@@ -58,6 +61,7 @@ class ChatRouter:
         universe = []
         for key in ("etfWatchlist", "etfBuyCandidates", "etfSellAlerts"):
             universe.extend(dashboard.get(key, []))
+        universe.extend((dashboard.get("etf") or {}).get("all_signals", []))
         for row in universe:
             name = str(row.get("name", ""))
             code = str(row.get("code", ""))

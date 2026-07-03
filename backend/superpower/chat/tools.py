@@ -166,6 +166,7 @@ class ResearchToolbox:
                 summary=f"未配置 SQLite Repository，无法按 {code} 查询单标的全量指标。",
                 data={},
             )
+        dashboard_signal = self._dashboard_etf_signal(code)
         asset = self.repository.resolve_asset(code)
         latest_bar = self.repository.get_latest_market_bar(code) or self.repository.get_etf_latest_bar(code)
         signals = self.repository.get_etf_signals(code, latest_bar.get("trade_date") if latest_bar else None)
@@ -181,9 +182,9 @@ class ResearchToolbox:
         return ToolResult(
             tool="get_etf_single_asset",
             title="ETF single asset",
-            source="sqlite.asset_master + sqlite.etf_daily_bars + sqlite.etf_daily_signals",
+            source="dashboard.etf.all_signals + sqlite.asset_master + sqlite.market_daily_indicators + sqlite.etf_daily_signals",
             summary=summary,
-            data={"asset": asset, "latest_bar": latest_bar, "signals": signals, "history": history},
+            data={"asset": asset, "dashboard_signal": dashboard_signal, "latest_bar": latest_bar, "signals": signals, "history": history},
         )
 
     def get_tl_state(self) -> ToolResult:
@@ -297,6 +298,17 @@ class ResearchToolbox:
             elif name and str(row.get("name", "")) == name:
                 filtered.append(row)
         return filtered
+
+    def _dashboard_etf_signal(self, code: str) -> dict[str, Any] | None:
+        target = code.upper()
+        for row in (self.dashboard.get("etf") or {}).get("all_signals", []):
+            if str(row.get("code", "")).upper() == target:
+                return row
+        for key in ("etfBuyCandidates", "etfSellAlerts", "etfWatchlist"):
+            for row in self.dashboard.get(key, []):
+                if str(row.get("code", "")).upper() == target:
+                    return row
+        return None
 
     def _agent_metric(self, agent_name: str, metric_name: str) -> Any:
         for row in self.dashboard.get("agentAudit", []) or []:

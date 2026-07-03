@@ -96,7 +96,20 @@ def latest_etf_signals(
         risk_notes = _risk_notes(row, prev, signal_type, watch_type)
         data_quality = "OK" if pd.notna(row.get("vol_ratio60")) else "WARN"
         confidence = _confidence(data_quality, signal_type, row)
-        reason = "；".join(buy_reasons + sell_reasons) or watch_type or "未触发完整规则条件"
+        if buy_signal:
+            reason = "；".join(buy_reasons)
+        elif sell_signal:
+            reason = "；".join(sell_reasons)
+        elif watch_type:
+            reason = watch_type
+        else:
+            reason = _neutral_reason(row, prev, params, code in holding_codes, bool(sell_reasons))
+        rule_hits = _rule_hits(
+            buy_reasons if buy_signal else [],
+            sell_reasons if sell_signal else [],
+            watch_type,
+            missing_condition,
+        )
 
         rows.append(
             {
@@ -109,7 +122,7 @@ def latest_etf_signals(
                 "display_action": display_action,
                 "reason": reason,
                 "metrics": _metrics(row),
-                "rule_hits": _rule_hits(buy_reasons, sell_reasons, watch_type, missing_condition),
+                "rule_hits": rule_hits,
                 "risk_notes": risk_notes,
                 "confidence": confidence,
                 "data_quality": data_quality,
@@ -254,6 +267,83 @@ def _volume_check(row: pd.Series, threshold: float) -> str:
         return "量能历史不足"
     status = "达标" if row["vol_ratio60"] >= threshold else "未达标"
     return f"前60日均量倍数{row['vol_ratio60']:.4f}，阈值{threshold:g}，{status}"
+
+
+def _neutral_reason(row: pd.Series, prev: pd.Series, params: dict[str, Any], is_holding: bool, has_sell_shape: bool) -> str:
+    if is_holding:
+        return "持仓中，未触发平仓提示：" + "；".join(_sell_missing_conditions(row, params))
+    prefix = "非持仓标的；虽有平仓形态，但平仓提示只对持仓生效；" if has_sell_shape else ""
+    return prefix + "未触发建仓候选：" + "；".join(_buy_missing_conditions(row, prev, params))
+
+
+def _buy_missing_conditions(row: pd.Series, prev: pd.Series, params: dict[str, Any]) -> list[str]:
+    threshold = params["etf"]["buy_volume_ratio_min"]
+    ma5_cross_ma10 = (
+        pd.notna(prev.get("ma5"))
+        and pd.notna(prev.get("ma10"))
+        and pd.notna(row.get("ma5"))
+        and pd.notna(row.get("ma10"))
+        and prev["ma5"] <= prev["ma10"]
+        and row["ma5"] > row["ma10"]
+    )
+    macd_improving = pd.notna(row.get("macd_hist")) and pd.notna(prev.get("macd_hist")) and row["macd_hist"] > prev["macd_hist"]
+    volume_ok = pd.notna(row.get("vol_ratio60")) and row["vol_ratio60"] >= threshold
+    dif_cross_dea = (
+        pd.notna(prev.get("dif"))
+        and pd.notna(prev.get("dea"))
+        and pd.notna(row.get("dif"))
+        and pd.notna(row.get("dea"))
+        and prev["dif"] <= prev["dea"]
+        and row["dif"] > row["dea"]
+    )
+    ma5_above_ma10 = pd.notna(row.get("ma5")) and pd.notna(row.get("ma10")) and row["ma5"] > row["ma10"]
+    close_above_ma20 = pd.notna(row.get("收盘价")) and pd.notna(row.get("ma20")) and row["收盘价"] > row["ma20"]
+
+    rule_a_missing = []
+    if not ma5_cross_ma10:
+        rule_a_missing.append("MA5今日未上穿MA10")
+    if not macd_improving:
+        rule_a_missing.append("MACD柱未较昨日改善")
+    if not volume_ok:
+        rule_a_missing.append(f"量能倍数未达到{threshold:g}")
+
+    rule_b_missing = []
+    if not dif_cross_dea:
+        rule_b_missing.append("DIF今日未上穿DEA")
+    if not ma5_above_ma10:
+        rule_b_missing.append("MA5未高于MA10")
+    if not close_above_ma20:
+        rule_b_missing.append("收盘价未高于MA20")
+    if not volume_ok:
+        rule_b_missing.append(f"量能倍数未达到{threshold:g}")
+
+    return [f"规则A缺{'、'.join(rule_a_missing)}", f"规则B缺{'、'.join(rule_b_missing)}"]
+
+
+def _sell_missing_conditions(row: pd.Series, params: dict[str, Any]) -> list[str]:
+    ma10_threshold = params["etf"]["sell_ma10_volume_ratio_min"]
+    ma5_threshold = params["etf"]["sell_ma5_volume_ratio_min"]
+    close_below_ma10 = pd.notna(row.get("收盘价")) and pd.notna(row.get("ma10")) and row["收盘价"] < row["ma10"]
+    close_below_ma5 = pd.notna(row.get("收盘价")) and pd.notna(row.get("ma5")) and row["收盘价"] < row["ma5"]
+    volume = row.get("vol_ratio60")
+    ma10_volume_ok = pd.notna(volume) and volume >= ma10_threshold
+    ma5_volume_ok = pd.notna(volume) and volume >= ma5_threshold
+    missing = []
+    if not (close_below_ma10 and ma10_volume_ok):
+        detail = []
+        if not close_below_ma10:
+            detail.append("收盘未跌破MA10")
+        if not ma10_volume_ok:
+            detail.append(f"量能倍数未达到{ma10_threshold:g}")
+        missing.append("MA10平仓条件未满足：" + "、".join(detail))
+    if not (close_below_ma5 and ma5_volume_ok):
+        detail = []
+        if not close_below_ma5:
+            detail.append("收盘未跌破MA5")
+        if not ma5_volume_ok:
+            detail.append(f"量能倍数未达到{ma5_threshold:g}")
+        missing.append("MA5平仓条件未满足：" + "、".join(detail))
+    return missing
 
 
 def _watchlist_diagnosis(row: pd.Series, prev: pd.Series, params: dict[str, Any]) -> tuple[str, str, str]:

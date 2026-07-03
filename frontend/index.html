@@ -154,11 +154,11 @@
               <div class="section-head compact">
                 <div>
                   <h3>直达</h3>
-                  <p>按资产类别查看信号、解释和回测验证。</p>
+                  <p>按资产类别查看今日信号、解释和风险提示。</p>
                 </div>
               </div>
               <div class="shortcut-grid">
-                <a href="#etf">ETF 信号与回测</a>
+                <a href="#etf">ETF 信号</a>
                 <a href="#tl">TL 状态诊断</a>
                 <a href="#cb">可转债打分</a>
                 <a href="#assets">标的档案</a>
@@ -188,8 +188,8 @@
             <div class="module-hero">
               <div>
                 <p class="eyebrow">ETF</p>
-                <h2>ETF 轮动与验证</h2>
-                <p>建仓、平仓、关注池和近 30 个交易日次日验证放在同一个工作区，便于复盘规则是否有效。</p>
+                <h2>ETF 轮动信号</h2>
+                <p>今日信号和全量扫描放在同一个工作区；全量扫描可查看每只 ETF 为什么触发或未触发。</p>
               </div>
               <div class="shortcut-row">
                 <a href="#assets">ETF 档案</a>
@@ -211,12 +211,8 @@
                 <div class="table-wrap"><table id="etf-watch-table"></table></div>
               </article>
               <article class="card span-2">
-                <h3>近30交易日次日验证</h3>
-                <div class="table-wrap"><table id="etf-nextday-table"></table></div>
-              </article>
-              <article class="card span-2">
-                <h3>完整交易回测</h3>
-                <div class="table-wrap"><table id="etf-trades-table"></table></div>
+                <h3>今日 ETF 打分排名（全量）</h3>
+                <div class="table-wrap"><table id="etf-all-table"></table></div>
               </article>
             </div>
           </div>
@@ -240,10 +236,6 @@
                 <h3>今日状态</h3>
                 <div id="tl-panel-state" class="state-badge">--</div>
                 <dl id="tl-panel-metrics" class="metric-list"></dl>
-              </article>
-              <article class="card">
-                <h3>历史诊断</h3>
-                <div class="table-wrap"><table id="tl-backtest-table"></table></div>
               </article>
               <article class="card span-2">
                 <h3>近期状态</h3>
@@ -313,16 +305,8 @@
               <div class="table-wrap"><table id="cb-table"></table></div>
             </article>
             <article class="card">
-              <h3>历史诊断摘要</h3>
-              <div class="table-wrap"><table id="backtest-summary-table"></table></div>
-            </article>
-            <article class="card">
-              <h3>ETF 回测交易</h3>
-              <div class="table-wrap"><table id="backtest-trades-table"></table></div>
-            </article>
-            <article class="card span-2">
-              <h3>ETF 次日验证近30交易日</h3>
-              <div class="table-wrap"><table id="backtest-nextday-table"></table></div>
+              <h3>说明</h3>
+              <p class="plain-text">当前页面保留运行摘要和 Agent 审计，用于确认日更流程是否正常；ETF 页面只展示今日信号、持仓路径和全量判断理由。</p>
             </article>
           </div>
         </section>

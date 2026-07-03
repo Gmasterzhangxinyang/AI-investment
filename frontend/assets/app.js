@@ -37,7 +37,7 @@ const refreshStepLabels = {
   "etf-agent": "生成 ETF 建仓/平仓/关注信号",
   "tl-agent": "生成 TL 日频交易状态",
   "convertible-bond-agent": "筛选并打分可转债",
-  "backtest-agent": "执行历史信号诊断",
+  "backtest-agent": "执行运行诊断",
   "risk-agent": "生成组合风险提示",
   "ai-research-committee-agent": "生成 AI 复核意见",
   "explanation-agent": "生成客户可读解释",
@@ -610,6 +610,19 @@ function render() {
     ["missing_condition", "缺口"],
     ["suggested_action", "动作"],
   ];
+  const etfAllColumns = [
+    ["rank", "排名"],
+    ["name", "标的"],
+    ["code", "代码"],
+    ["position_status", "持仓状态"],
+    ["display_action", "今日判断"],
+    ["score", "分数"],
+    ["close", "收盘"],
+    ["ma5_ma10_signal", "MA5/MA10"],
+    ["ma5_ma20_status", "MA5/MA20"],
+    ["volume_check", "量能检查"],
+    ["decision_reason", "判断理由"],
+  ];
   const tlRecentColumns = [
     ["date", "日期"],
     ["state", "状态"],
@@ -635,47 +648,18 @@ function render() {
     ["risk_flags", "风险提示"],
     ["rank_reason", "评分依据"],
   ];
-  const backtestSummaryColumns = [
-    ["item", "指标"],
-    ["value", "数值"],
-    ["level", "级别"],
-    ["note", "说明"],
-  ];
-  const backtestTradeColumns = [
-    ["name", "标的"],
-    ["code", "代码"],
-    ["entry_date", "买入日"],
-    ["entry_price", "买入价"],
-    ["exit_date", "卖出日"],
-    ["exit_price", "卖出价"],
-    ["net_return", "净收益"],
-    ["holding_days", "持有天数"],
-    ["exit_reason", "退出原因"],
-  ];
-  const nextDayColumns = [
-    ["signal_date", "信号日"],
-    ["next_date", "验证日"],
-    ["signal_type", "信号"],
-    ["name", "标的"],
-    ["code", "代码"],
-    ["expected_direction", "预期"],
-    ["next_day_return", "次日收益"],
-    ["result", "结果"],
-    ["reason", "触发原因"],
-  ];
-
   renderModuleKpis(summary);
   renderTable("buy-table", data.etfBuyCandidates || [], etfBuyColumns, "buy");
   renderTable("sell-table", data.etfSellAlerts || [], etfSellColumns, "sell");
   renderTable("etf-buy-table", data.etfBuyCandidates || [], etfBuyColumns, "buy");
   renderTable("etf-sell-table", data.etfSellAlerts || [], etfSellColumns, "sell");
   renderTable("etf-watch-table", data.etfWatchlist || [], etfWatchColumns, "watch");
+  renderTable("etf-all-table", rankedEtfRows(data.etf?.all_signals || data.etfAllSignals || []), etfAllColumns);
   renderWatchlist(data.etfWatchlist || [], data.etfDetailHistory || []);
   renderTL(data.tlToday?.[0] || {});
   renderTLPanel(data.tlToday?.[0] || {});
   renderTable("tl-recent-table", data.tlRecent || [], tlRecentColumns);
   renderTable("tl-panel-recent-table", data.tlRecent || [], tlRecentColumns);
-  renderTable("tl-backtest-table", (data.backtestSummary || []).filter((row) => String(row.item || "").startsWith("TL")), backtestSummaryColumns);
   renderTable("cb-table", data.cbTop10 || [], cbColumns, "watch");
   renderTable("cb-top-table", data.cbTop10 || [], cbColumns, "watch");
   renderTable("cb-ranked-table", data.cbRanked || [], cbColumns, "watch");
@@ -684,11 +668,6 @@ function render() {
     (data.dataQuality || []).filter((row) => String(row.item || "").includes("可转债") || String(row.item || "").includes("强赎") || String(row.item || "").includes("YTM") || String(row.item || "").includes("评级")),
     [["item", "识别项"], ["status", "状态"], ["detail", "详情"], ["note", "处理说明"]],
   );
-  renderTable("backtest-summary-table", data.backtestSummary || [], backtestSummaryColumns);
-  renderTable("backtest-trades-table", data.backtestTrades || [], backtestTradeColumns, "sell");
-  renderTable("etf-trades-table", data.backtestTrades || [], backtestTradeColumns, "sell");
-  renderTable("backtest-nextday-table", data.backtestNextDayChecks || [], nextDayColumns);
-  renderTable("etf-nextday-table", data.backtestNextDayChecks || [], nextDayColumns);
   renderAICommittee(data.aiCommitteeReviews || []);
   renderTable("quality-table", data.dataQuality || [], [
     ["item", "识别项"],
@@ -759,7 +738,6 @@ function renderKpis(summary) {
     ["ETF 平仓提示", pick(summary, "ETF平仓提示数量")],
     ["可转债 Top10", pick(summary, "可转债Top10数量")],
     ["TL 状态", pick(summary, "TL今日状态")],
-    ["回测 WARN", pick(summary, "回测诊断WARN数量")],
     ["日报解释", dailyReportMode(summary)],
     ["聊天模型", chatModelStatus()],
     ["已识别风险项", pickSummary(summary, "系统已识别风险项", "数据校验异常项")],
@@ -770,20 +748,11 @@ function renderKpis(summary) {
 }
 
 function renderModuleKpis(summary) {
-  const nextDayRows = state.data?.backtestNextDayChecks || [];
-  const buyRows = nextDayRows.filter((row) => row.signal_type === "建仓");
-  const sellRows = nextDayRows.filter((row) => row.signal_type === "平仓");
-  const hitRate = (rows) => {
-    if (!rows.length) return "--";
-    const hits = rows.filter((row) => row.result === "对").length;
-    return `${((hits / rows.length) * 100).toFixed(1)}%`;
-  };
   const etfItems = [
+    ["持仓中", (state.data?.etf?.all_signals || []).filter((row) => row.position_status === "持仓中").length],
     ["建仓候选", pick(summary, "ETF建仓候选数量")],
     ["关注池", pick(summary, "ETF关注池数量")],
     ["平仓提示", pick(summary, "ETF平仓提示数量")],
-    ["建仓次日命中", hitRate(buyRows)],
-    ["平仓次日命中", hitRate(sellRows)],
   ];
   const cbItems = [
     ["Top10", pick(summary, "可转债Top10数量")],
@@ -980,6 +949,16 @@ function renderTable(id, rows, columns, mode) {
     })
     .join("");
   table.innerHTML = `${thead}<tbody>${tbody}</tbody>`;
+}
+
+function rankedEtfRows(rows) {
+  return [...rows]
+    .sort((left, right) => Number(right.score ?? -Infinity) - Number(left.score ?? -Infinity))
+    .map((row, index) => ({
+      ...row,
+      rank: index + 1,
+      decision_reason: row.signal_reason || row.reason || row.missing_condition || row.risk_notes || "--",
+    }));
 }
 
 async function submitChat(question) {

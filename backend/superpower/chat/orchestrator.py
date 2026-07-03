@@ -90,7 +90,7 @@ class ChatOrchestrator:
             trace.llm_used = False
             trace.llm_model = "deterministic_chat"
             trace.llm_reason = "simple_factual_answer"
-            trace.steps.append(AgentStep("DeterministicAnswerAgent", "success", "参数或数量类问题使用本地确定性证据直接回答。"))
+            trace.steps.append(AgentStep("DeterministicAnswerAgent", "success", "使用本地确定性证据直接回答。"))
             output_guard = self.guardrails.validate_output(deterministic_answer, intent, tools)
             trace.guardrail = output_guard
             trace.steps.append(
@@ -242,6 +242,10 @@ class ChatOrchestrator:
         if rule_contract and isinstance(rule_contract.data, dict):
             params = rule_contract.data.get("strategy_params") or {}
 
+        etf_asset_answer = self._single_etf_diagnosis_answer(pack, params)
+        if etf_asset_answer:
+            return etf_asset_answer
+
         strategy_param_answer = self._strategy_param_answer(question, params)
         if strategy_param_answer:
             return strategy_param_answer
@@ -311,6 +315,114 @@ class ChatOrchestrator:
                     )
 
         return ""
+
+    def _single_etf_diagnosis_answer(self, pack: EvidencePack, params: dict[str, Any]) -> str:
+        tool = next((item for item in pack.tools if item.tool == "get_etf_single_asset"), None)
+        if tool is None or not isinstance(tool.data, dict):
+            return ""
+        dashboard_signal = tool.data.get("dashboard_signal") or {}
+        latest_bar = tool.data.get("latest_bar") or {}
+        history = tool.data.get("history") or []
+        asset = tool.data.get("asset") or {}
+        if not dashboard_signal and not latest_bar:
+            code = pack.intent.entities.get("code") or str(asset.get("code", ""))
+            return f"当前数据库和最新日报都没有找到 {code or '该ETF'} 的有效指标记录。请先确认 Wind ETF 文件已包含该标的，并重新点击一键刷新。"
+
+        code = str(dashboard_signal.get("code") or latest_bar.get("code") or asset.get("code") or pack.intent.entities.get("code") or "")
+        name = str(dashboard_signal.get("name") or latest_bar.get("name") or asset.get("name") or code)
+        action = str(dashboard_signal.get("display_action") or self._signal_action_text(dashboard_signal) or "未触发")
+        position_status = str(dashboard_signal.get("position_status") or "--")
+        reason = str(dashboard_signal.get("signal_reason") or dashboard_signal.get("reason") or dashboard_signal.get("missing_condition") or "--")
+        score = self._fmt_metric(dashboard_signal.get("score"))
+        close = self._fmt_metric(dashboard_signal.get("close", latest_bar.get("close")))
+        ma5 = self._fmt_metric(dashboard_signal.get("ma5", latest_bar.get("ma5")))
+        ma10 = self._fmt_metric(dashboard_signal.get("ma10", latest_bar.get("ma10")))
+        ma20 = self._fmt_metric(dashboard_signal.get("ma20", latest_bar.get("ma20")))
+        ma60 = self._fmt_metric(dashboard_signal.get("ma60", latest_bar.get("ma60")))
+        vol = self._fmt_metric(dashboard_signal.get("vol_ratio60", latest_bar.get("vol_ratio60")))
+        macd = self._fmt_metric(dashboard_signal.get("macd_hist", latest_bar.get("macd_hist")))
+        dif = self._fmt_metric((dashboard_signal.get("metrics") or {}).get("dif", latest_bar.get("dif")))
+        dea = self._fmt_metric((dashboard_signal.get("metrics") or {}).get("dea", latest_bar.get("dea")))
+        trade_date = str(dashboard_signal.get("date") or latest_bar.get("trade_date") or pack.report_date)[:10]
+        ma_signal = str(dashboard_signal.get("ma5_ma10_signal") or "--")
+        ma20_status = str(dashboard_signal.get("ma5_ma20_status") or "--")
+        volume_check = str(dashboard_signal.get("volume_check") or "--")
+        watch_type = str(dashboard_signal.get("watch_type") or "")
+        suggestion = self._etf_action_hint(dashboard_signal, params)
+        recent_line = self._etf_recent_history_line(history)
+
+        lines = [
+            f"结论：{name}（{code}）截至 {trade_date} 的今日判断是：{action}。",
+            f"持仓路径：系统当前把它识别为“{position_status}”。持仓中才检查平仓提示；空仓或已平仓才检查建仓候选和关注池。",
+            (
+                f"今日指标：收盘 {close}，MA5 {ma5}，MA10 {ma10}，MA20 {ma20}，MA60 {ma60}，"
+                f"量能倍数 {vol}，MACD柱 {macd}，DIF {dif}，DEA {dea}，评分 {score}。"
+            ),
+            f"规则证据：{ma_signal}；{ma20_status}；{volume_check}。判断理由：{reason}",
+        ]
+        if watch_type:
+            lines.append(f"关注状态：{watch_type}。这只是观察池，不等于建仓候选。")
+        if recent_line:
+            lines.append(recent_line)
+        lines.append(f"规则动作提示：{suggestion}")
+        lines.append("来源：最新 dashboard.etf.all_signals、SQLite 日频指标、configs/strategy_params.json。")
+        return "\n\n".join(lines)
+
+    def _signal_action_text(self, row: dict[str, Any]) -> str:
+        mapping = {
+            "buy_candidate": "模型触发建仓候选",
+            "sell_alert": "模型触发平仓提示",
+            "watch": "进入观察池",
+            "neutral": "未触发",
+            "data_unavailable": "数据不足，无法判断",
+        }
+        return mapping.get(str(row.get("signal_type") or row.get("action") or ""), "")
+
+    def _etf_action_hint(self, row: dict[str, Any], params: dict[str, Any]) -> str:
+        action = str(row.get("action") or row.get("signal_type") or "")
+        position_status = str(row.get("position_status") or "")
+        threshold = self._fmt_param((params.get("etf") or {}).get("buy_volume_ratio_min"))
+        if action == "buy_candidate":
+            return "规则已触发建仓候选，可进入人工复核名单；是否交易仍需结合组合约束和人工判断。"
+        if action == "sell_alert":
+            return "规则已触发平仓提示，可进入人工复核名单；该提示只对持仓标的生效。"
+        if action == "watch":
+            missing = row.get("missing_condition") or "仍有条件未确认"
+            return f"规则提示关注，当前缺口是：{missing}。后续重点看量能是否达到 {threshold} 以及 MACD/均线条件是否继续确认。"
+        if "持仓中" in position_status:
+            return "当前未触发平仓提示；继续跟踪是否收盘跌破 MA10/MA5 并伴随放量。"
+        return f"当前未触发建仓候选；继续跟踪今日缺口是否修复，尤其是 MA5 上穿、MACD 改善/金叉和量能倍数是否达到 {threshold}。"
+
+    def _etf_recent_history_line(self, history: list[Any]) -> str:
+        rows = [row for row in history if isinstance(row, dict)]
+        if len(rows) < 2:
+            return ""
+        ordered = sorted(rows, key=lambda row: str(row.get("trade_date") or row.get("date") or ""))
+        latest = ordered[-1]
+        previous = ordered[-2]
+        close = self._to_float(latest.get("close"))
+        prev_close = self._to_float(previous.get("close"))
+        if close is None or prev_close in {None, 0}:
+            return ""
+        change = close / prev_close - 1
+        direction = "上涨" if change > 0 else "下跌" if change < 0 else "持平"
+        return f"最近一日变化：较上一有效交易日{direction} {change * 100:.2f}%，这只是行情事实，不改变今日规则判断。"
+
+    def _fmt_metric(self, value: Any) -> str:
+        number = self._to_float(value)
+        if number is None:
+            return "--"
+        if abs(number) >= 100:
+            return f"{number:.2f}"
+        return f"{number:.4f}".rstrip("0").rstrip(".")
+
+    def _to_float(self, value: Any) -> float | None:
+        try:
+            if value is None or value == "":
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     def _asks_etf_count(self, text: str) -> bool:
         return "etf" in text and any(token in text for token in ["一共", "多少", "几个", "数量", "有多少"])
