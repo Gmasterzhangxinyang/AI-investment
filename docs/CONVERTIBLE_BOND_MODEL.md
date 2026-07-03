@@ -1,6 +1,6 @@
 # 可转债判断逻辑、模型与公式
 
-本文档描述当前系统可转债板块的风险过滤、打分模型和 Top10 选择逻辑。可转债排序由确定性规则生成，AI 只解释原因，不改写排名。
+本文档描述当前系统可转债板块的风险过滤、打分模型和候选资格分层逻辑。可转债排序由确定性规则生成，AI 只解释原因，不改写排名。
 
 ## 1. 输入数据
 
@@ -59,8 +59,9 @@ if abs(percent_field).quantile(0.75) <= 1.5 and max(abs(percent_field)) <= 5:
   -> 风险扣分
   -> 综合评分
   -> 排名
-  -> 行业分散
-  -> Top10
+  -> 候选资格分层
+  -> 合格候选中做行业分散
+  -> Top候选
 ```
 
 ## 3. 关键参数
@@ -286,7 +287,7 @@ min_remaining_size_hard_exclude = 0.5
 exclude_unresolved_redemption_trigger = true
 ```
 
-因此，触发强赎价但未见有效不强赎公告的标的会被硬剔除，不能进入普通 Top10。
+因此，触发强赎价但未见有效不强赎公告的标的会被硬剔除，不能进入普通 Top 候选。
 
 如果设置为 `false`，以下状态会保留观察但强扣分和提示风险：
 
@@ -690,14 +691,56 @@ max_per_industry_l2 = 2
 输出：
 
 ```text
-Top10
+合格候选
+弱观察候选
+风险观察
+排除列表
 ```
 
-## 17. 输出结果
+兼容字段 `cbTop10` 仍保留，但只等于 `qualified[:10]`。如果合格候选不足 10 只，不会从弱观察或风险观察中补足。
+
+## 17. 候选资格分层
+
+评分完成后，系统不会直接强制取前 10 名，而是先分层：
+
+```text
+qualified   合格候选，可进入 Top 候选表
+weak_watch  弱观察候选，仅代表相对排序靠前，不构成高质量候选
+risk_watch  风险观察，不进入 Top 候选表
+excluded    硬排除列表
+```
+
+分数等级：
+
+```text
+A: score >= 70
+B: 55 <= score < 70
+C: 40 <= score < 55
+D: 25 <= score < 40
+E: score < 25
+```
+
+只有同时满足以下条件，才可进入 `qualified`：
+
+```text
+score >= 50
+risk_level != 高
+conversion_premium_rate <= 35
+ytm >= -3
+remaining_size >= 5
+没有“最新扣非净利润为负”
+没有“增长率极端，评分已截尾”
+```
+
+如果 `qualified` 不足 10 只，Top 表只展示实际合格数量。若 `qualified` 为 0，页面显示“今日无合格可转债 Top 候选”，并说明候选池整体质量偏弱。
+
+## 18. 输出结果
 
 可转债页面输出：
 
-- Top10
+- 合格候选 Top
+- 弱观察候选
+- 风险观察
 - 候选池全量排序
 - 可转债质检与风险
 - 标的档案详情
@@ -727,6 +770,11 @@ Top10
 - `scale_score`
 - `risk_penalty`
 - `score`
+- `score_grade`
+- `qualification`
+- `eligible_for_top`
+- `not_top_reason`
+- `quality_notes`
 - `risk_level`
 - `risk_flags`
 - `rank_reason`

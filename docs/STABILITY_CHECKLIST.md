@@ -53,8 +53,8 @@
 
 ## Convertible Bond
 
-- [ ] Top10 has `score_breakdown`.
-- [ ] Top10 has `redemption_status`.
+- [ ] 可转债 Top候选包含 `score_breakdown`。
+- [ ] 可转债 Top候选包含 `redemption_status`。
 - [ ] Excluded rows have `excluded_reason`.
 - [ ] Announced redemption is hard excluded.
 - [ ] Triggered redemption without valid no-redemption announcement is hard excluded by default.
