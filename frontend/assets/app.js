@@ -55,6 +55,8 @@ const integerParamPaths = new Set([
 ]);
 
 const formatNumber = (value) => {
+  if (Array.isArray(value)) return value.filter((item) => item !== null && item !== undefined && item !== "").join("；") || "--";
+  if (value && typeof value === "object") return JSON.stringify(value);
   if (typeof value !== "number") return value ?? "--";
   if (Math.abs(value) >= 100) return value.toFixed(2);
   return value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
@@ -231,7 +233,8 @@ function renderAssetDetail() {
   document.getElementById("asset-detail-title").textContent = `${asset.name || "--"} ${asset.code || ""}`;
   if (asset.asset_type === "CONVERTIBLE") {
     const snapshot = detail.convertibleSnapshot || {};
-    if (!snapshot.bond_code && !snapshot.report_date) {
+    const dashboardHit = findConvertibleDashboardRow(asset.code);
+    if (!snapshot.bond_code && !snapshot.report_date && !dashboardHit) {
       renderMetricList("asset-detail-metrics", [
         ["类型", "可转债"],
         ["当前状态", detail.convertibleMessage || "当前报告未提供该转债排序快照"],
@@ -241,22 +244,39 @@ function renderAssetDetail() {
       return;
     }
     const payload = snapshot.payload_json || {};
+    const cbRow = mergeRecords(dashboardHit?.row || {}, payload, snapshot);
+    const qualification = cbRow.qualification || dashboardHit?.bucket || "";
+    cbRow.detail_date = cbRow.report_date || String(cbRow.date || "").slice(0, 10);
+    cbRow.qualification_display = qualificationLabel(qualification);
+    cbRow.eligible_for_top_text = cbRow.eligible_for_top === true ? "是" : "否";
     const metrics = [
       ["类型", "可转债"],
-      ["排名", snapshot.rank],
-      ["评分", snapshot.score],
-      ["价格", snapshot.price],
-      ["评级", payload.bond_rating || snapshot.bond_rating],
-      ["行业", payload.sw_l1 || snapshot.sw_l1],
-      ["强赎状态", payload.redemption_status || snapshot.redemption_status],
-      ["风险等级", payload.risk_level || snapshot.risk_level],
-      ["风险提示", payload.risk_flags || snapshot.risk_flags],
-      ["评分依据", snapshot.rank_reason || payload.rank_reason],
+      ["当前分层", cbRow.qualification_display],
+      ["是否可进合格 Top", cbRow.eligible_for_top_text],
+      ["未入 Top 原因", cbRow.not_top_reason || cbRow.excluded_reason || detail.convertibleMessage],
+      ["排名", cbRow.rank],
+      ["评分", cbRow.score],
+      ["评分等级", cbRow.score_grade],
+      ["价格", cbRow.price],
+      ["评级", cbRow.bond_rating || cbRow.rating],
+      ["行业", cbRow.sw_l1],
+      ["存续规模", cbRow.remaining_size],
+      ["转股溢价率", cbRow.conversion_premium_rate],
+      ["到期收益率", cbRow.ytm],
+      ["强赎状态", cbRow.redemption_status],
+      ["风险等级", cbRow.risk_level],
+      ["风险提示", cbRow.quality_notes || cbRow.risk_flags],
+      ["评分依据", cbRow.rank_reason],
+      ["数据来源", snapshot.bond_code ? "数据库快照" : "当前 dashboard"],
     ];
     renderMetricList("asset-detail-metrics", metrics);
-    renderTable("asset-history-table", [snapshot], [
-      ["report_date", "报告日"],
+    renderTable("asset-history-table", [cbRow], [
+      ["detail_date", "数据日"],
       ["rank", "排名"],
+      ["qualification_display", "分层"],
+      ["eligible_for_top_text", "可进Top"],
+      ["not_top_reason", "未入Top原因"],
+      ["excluded_reason", "排除原因"],
       ["price", "价格"],
       ["conversion_premium_rate", "转股溢价率"],
       ["ytm", "到期收益率"],
@@ -292,6 +312,45 @@ function renderAssetDetail() {
     ["macd_hist", "MACD柱"],
     ["kdj_j", "KDJ J"],
   ]);
+}
+
+function findConvertibleDashboardRow(code) {
+  const normalized = String(code || "").trim();
+  if (!normalized) return null;
+  const cb = state.data?.convertible_bond || {};
+  const buckets = [
+    ["qualified", cb.qualified || cb.top10 || state.data?.cbTop10 || []],
+    ["weak_watch", cb.weak_watch || []],
+    ["risk_watch", cb.risk_watch || []],
+    ["ranked_candidates", cb.candidates || cb.ranked_candidates || state.data?.cbRanked || []],
+    ["excluded", cb.excluded || state.data?.cbExcluded || []],
+  ];
+  for (const [bucket, rows] of buckets) {
+    const row = (rows || []).find((item) => String(item.bond_code || item.code || "").trim() === normalized);
+    if (row) return { bucket, row };
+  }
+  return null;
+}
+
+function mergeRecords(...records) {
+  const merged = {};
+  records.forEach((record) => {
+    Object.entries(record || {}).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== "") merged[key] = value;
+    });
+  });
+  return merged;
+}
+
+function qualificationLabel(value) {
+  const labels = {
+    qualified: "合格候选",
+    weak_watch: "弱观察候选",
+    risk_watch: "风险观察",
+    excluded: "排除列表",
+    ranked_candidates: "候选池",
+  };
+  return labels[value] || value || "--";
 }
 
 function renderMetricList(id, metrics) {
