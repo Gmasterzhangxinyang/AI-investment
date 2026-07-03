@@ -254,6 +254,10 @@ class ChatOrchestrator:
         if convertible_answer:
             return convertible_answer
 
+        tl_answer = self._tl_diagnosis_answer(pack)
+        if tl_answer:
+            return tl_answer
+
         strategy_param_answer = self._strategy_param_answer(question, params)
         if strategy_param_answer:
             return strategy_param_answer
@@ -472,6 +476,63 @@ class ChatOrchestrator:
                 f"来源：{source}、dashboard.convertible_bond、SQLite asset_master、configs/strategy_params.json。",
             ]
         )
+
+    def _tl_diagnosis_answer(self, pack: EvidencePack) -> str:
+        if pack.intent.name != "tl_timing":
+            return ""
+        tool = next((item for item in pack.tools if item.tool == "get_tl_state"), None)
+        if tool is None or not isinstance(tool.data, dict):
+            return ""
+        rows = tool.data.get("today") or []
+        if not rows:
+            return f"当前最新日报没有 TL 今日状态数据；系统不能用模型猜测 TL 信号。"
+        row = rows[0]
+        name = str(row.get("name") or "30年国债期货TL")
+        code = str(row.get("code") or "TL.CFE")
+        trade_date = str(row.get("date") or pack.report_date)[:10]
+        state = str(row.get("display_status") or row.get("state") or row.get("action") or "--")
+        close = self._fmt_metric(row.get("收盘价") or row.get("close") or (row.get("metrics") or {}).get("close"))
+        ma5 = self._fmt_metric(row.get("ma5"))
+        ma10 = self._fmt_metric(row.get("ma10"))
+        ma20 = self._fmt_metric(row.get("ma20"))
+        ma60 = self._fmt_metric(row.get("ma60"))
+        vol_ratio = self._fmt_metric(row.get("vol_ratio60"))
+        daily_macd = self._fmt_metric(row.get("macd_hist") or (row.get("metrics") or {}).get("daily_macd_hist"))
+        daily_j = self._fmt_metric(row.get("kdj_j") or (row.get("metrics") or {}).get("daily_kdj_j"))
+        weekly_macd = self._fmt_metric(row.get("week_macd_hist") or (row.get("metrics") or {}).get("weekly_macd_hist"))
+        weekly_j = self._fmt_metric(row.get("week_kdj_j") or (row.get("metrics") or {}).get("weekly_kdj_j"))
+        daily_macd_reason = str(row.get("daily_macd_reason") or "--")
+        daily_kdj_check = str(row.get("daily_kdj_threshold_check") or "--")
+        weekly_macd_reason = str(row.get("weekly_macd_reason") or "--")
+        weekly_kdj_check = str(row.get("weekly_kdj_threshold_check") or "--")
+        reason = str(row.get("reason") or "--")
+        rule_hits = str(row.get("rule_hits") or "")
+        risk_notes = str(row.get("risk_notes") or "")
+        action_hint = self._tl_action_hint(row)
+
+        lines = [
+            f"结论：{name}（{code}）截至 {trade_date} 的今日状态是：{state}。",
+            f"今日指标：收盘 {close}，MA5 {ma5}，MA10 {ma10}，MA20 {ma20}，MA60 {ma60}，量能倍数 {vol_ratio}。",
+            f"日线证据：MACD柱 {daily_macd}，KDJ J {daily_j}；日线MACD判断：{daily_macd_reason}；日线KDJ检查：{daily_kdj_check}",
+            f"周线证据：MACD柱 {weekly_macd}，KDJ J {weekly_j}；周线MACD判断：{weekly_macd_reason}；周线KDJ检查：{weekly_kdj_check}",
+            f"规则结论：{reason}",
+        ]
+        if rule_hits:
+            lines.append(f"规则命中：{rule_hits}")
+        lines.append(f"动作提示：{action_hint}")
+        if risk_notes:
+            lines.append(f"边界说明：{risk_notes}")
+        lines.append("来源：最新 dashboard.tlToday、dashboard.tlRecent、SQLite 日频指标、configs/strategy_params.json。")
+        return "\n\n".join(lines)
+
+    def _tl_action_hint(self, row: dict[str, Any]) -> str:
+        if row.get("buy_signal") is True or str(row.get("status") or "") == "buy":
+            return "规则已触发建仓候选，可进入人工复核；是否交易仍需结合期货换月、保证金、杠杆和组合约束。"
+        if row.get("no_trade_signal") is True or str(row.get("status") or "") == "no_trade":
+            return "当前属于不做交易路径；周线不做交易或KDJ低位反弹条件不满足时，日线改善不能单独升级为建仓。"
+        if row.get("attention_signal") is True or str(row.get("status") or "") == "attention":
+            return "当前属于关注交易路径；继续观察日线/周线KDJ低位反弹条件是否补齐。"
+        return "当前未触发明确建仓候选；继续按日线/周线MACD与KDJ低位反弹条件跟踪。"
 
     def _fmt_metric(self, value: Any) -> str:
         number = self._to_float(value)
