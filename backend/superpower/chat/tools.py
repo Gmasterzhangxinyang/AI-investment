@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from superpower.db import DatabaseRepository
+from superpower.skills.convertible_bond_ranking.handler import rank_convertible_bonds
+from superpower.tools.excel_reader import parse_convertible_bond_excel
+from superpower.tools.frame import records
 
 from .schemas import ChatIntent, ToolResult
 
@@ -133,6 +137,18 @@ class ResearchToolbox:
         except json.JSONDecodeError:
             return {}
 
+    def _load_data_sources(self) -> dict[str, Any]:
+        root_dir = getattr(self.repository, "root_dir", None)
+        if root_dir is None:
+            return {}
+        path = root_dir / "configs" / "data_sources.json"
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+
     def get_etf_signals(self, entities: dict[str, str]) -> ToolResult:
         data = {
             "buy_candidates": self._filter_rows(self.dashboard.get("etfBuyCandidates", []), entities),
@@ -236,31 +252,25 @@ class ResearchToolbox:
         )
 
     def get_convertible_detail(self, code: str) -> ToolResult:
+        dashboard_row = self._dashboard_convertible_row(code)
+        source_row = dashboard_row or self._source_convertible_row(code)
         if self.repository is None:
             return ToolResult(
                 tool="get_convertible_detail",
                 title="Convertible bond detail",
                 source="dashboard only",
-                summary=f"未配置 SQLite Repository，无法查询 {code} 的可转债详情。",
-                data={},
+                summary=self._convertible_detail_summary(code, None, source_row),
+                data={"asset": None, "snapshot": None, "dashboard_row": dashboard_row, "source_row": source_row},
             )
         asset = self.repository.resolve_asset(code)
         snapshot = self.repository.get_convertible_snapshot(code)
-        if not snapshot:
-            summary = f"SQLite 未找到 {code} 的可转债排序快照。"
-        else:
-            payload = snapshot.get("payload_json") or {}
-            summary = (
-                f"{snapshot.get('bond_name', code)} 排名 {snapshot.get('rank')}，评分 {snapshot.get('score')}，"
-                f"价格 {snapshot.get('price')}，强赎状态 {payload.get('redemption_status', '--')}，"
-                f"风险提示 {payload.get('risk_flags', '--')}。"
-            )
+        summary = self._convertible_detail_summary(code, snapshot, source_row)
         return ToolResult(
             tool="get_convertible_detail",
             title="Convertible bond detail",
-            source="sqlite.asset_master + sqlite.convertible_bond_snapshots",
+            source="sqlite.asset_master + sqlite.convertible_bond_snapshots + dashboard.convertible_bond + configured Wind CB file",
             summary=summary,
-            data={"asset": asset, "snapshot": snapshot},
+            data={"asset": asset, "snapshot": snapshot, "dashboard_row": dashboard_row, "source_row": source_row},
         )
 
     def get_data_quality(self) -> ToolResult:
@@ -317,6 +327,83 @@ class ResearchToolbox:
                 if str(row.get("code", "")).upper() == target:
                     return row
         return None
+
+    def _dashboard_convertible_row(self, code: str) -> dict[str, Any] | None:
+        target = str(code or "").strip().upper()
+        if not target:
+            return None
+        cb = self.dashboard.get("convertible_bond") or {}
+        buckets = [
+            ("qualified", cb.get("qualified") or []),
+            ("top10", cb.get("top10") or self.dashboard.get("cbTop10", []) or []),
+            ("weak_watch", cb.get("weak_watch") or []),
+            ("risk_watch", cb.get("risk_watch") or []),
+            (
+                "ranked_candidates",
+                (cb.get("candidates") or []) + (cb.get("ranked_candidates") or []) + (self.dashboard.get("cbRanked", []) or []),
+            ),
+            ("excluded", (cb.get("excluded") or []) + (self.dashboard.get("cbExcluded", []) or [])),
+        ]
+        for bucket, rows in buckets:
+            for row in rows:
+                row_code = str(row.get("bond_code") or row.get("code") or "").strip().upper()
+                if row_code != target:
+                    continue
+                item = dict(row)
+                item.setdefault("qualification", "qualified" if bucket == "top10" else bucket)
+                item.setdefault("detail_source", "dashboard")
+                return item
+        return None
+
+    def _source_convertible_row(self, code: str) -> dict[str, Any] | None:
+        root_dir = getattr(self.repository, "root_dir", None)
+        if root_dir is None:
+            return None
+        sources = self._load_data_sources()
+        cb_file = sources.get("convertible_bond_file")
+        if not cb_file:
+            return None
+        path = Path(cb_file)
+        if not path.is_absolute():
+            path = root_dir / path
+        if not path.exists():
+            return None
+        target = str(code or "").strip().upper()
+        try:
+            cb_data = parse_convertible_bond_excel(path)
+            ranked, excluded = rank_convertible_bonds(cb_data, self._load_strategy_params(), include_excluded=True)
+        except Exception:
+            return None
+        for bucket, frame in (("ranked_candidates", ranked), ("excluded", excluded)):
+            if frame.empty or "bond_code" not in frame:
+                continue
+            hits = frame[frame["bond_code"].astype(str).str.upper() == target]
+            if hits.empty:
+                continue
+            item = records(hits.head(1))[0]
+            item.setdefault("qualification", "excluded" if bucket == "excluded" else item.get("qualification") or bucket)
+            item.setdefault("detail_source", "configured_wind_cb_file")
+            return item
+        return None
+
+    def _convertible_detail_summary(self, code: str, snapshot: dict[str, Any] | None, row: dict[str, Any] | None) -> str:
+        if row:
+            name = row.get("bond_name") or row.get("name") or code
+            reason = row.get("not_top_reason") or row.get("excluded_reason") or row.get("rank_reason") or "--"
+            qualification = row.get("qualification") or "--"
+            return (
+                f"{name} 当前分层 {qualification}，评分 {row.get('score', '--')}，"
+                f"价格 {row.get('price', '--')}，转股溢价率 {row.get('conversion_premium_rate', '--')}，"
+                f"YTM {row.get('ytm', '--')}，未入合格Top原因 {reason}。"
+            )
+        if snapshot:
+            payload = snapshot.get("payload_json") or {}
+            return (
+                f"{snapshot.get('bond_name', code)} 排名 {snapshot.get('rank')}，评分 {snapshot.get('score')}，"
+                f"价格 {snapshot.get('price')}，强赎状态 {payload.get('redemption_status', '--')}，"
+                f"风险提示 {payload.get('risk_flags', '--')}。"
+            )
+        return f"当前最新 dashboard、SQLite 和配置的 Wind 可转债文件都没有找到 {code} 的可转债详情。"
 
     def _agent_metric(self, agent_name: str, metric_name: str) -> Any:
         for row in self.dashboard.get("agentAudit", []) or []:

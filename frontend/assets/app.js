@@ -323,7 +323,7 @@ function findConvertibleDashboardRow(code) {
     ["weak_watch", cb.weak_watch || []],
     ["risk_watch", cb.risk_watch || []],
     ["ranked_candidates", cb.candidates || cb.ranked_candidates || state.data?.cbRanked || []],
-    ["excluded", cb.excluded || state.data?.cbExcluded || []],
+    ["excluded", [...(cb.excluded || []), ...(state.data?.cbExcluded || [])]],
   ];
   for (const [bucket, rows] of buckets) {
     const row = (rows || []).find((item) => String(item.bond_code || item.code || "").trim() === normalized);

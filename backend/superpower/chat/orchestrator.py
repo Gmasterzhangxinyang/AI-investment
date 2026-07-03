@@ -250,6 +250,10 @@ class ChatOrchestrator:
         if etf_asset_answer:
             return etf_asset_answer
 
+        convertible_answer = self._single_convertible_diagnosis_answer(pack)
+        if convertible_answer:
+            return convertible_answer
+
         strategy_param_answer = self._strategy_param_answer(question, params)
         if strategy_param_answer:
             return strategy_param_answer
@@ -426,6 +430,49 @@ class ChatOrchestrator:
         direction = "上涨" if change > 0 else "下跌" if change < 0 else "持平"
         return f"最近一日变化：较上一有效交易日{direction} {change * 100:.2f}%，这只是行情事实，不改变今日规则判断。"
 
+    def _single_convertible_diagnosis_answer(self, pack: EvidencePack) -> str:
+        if pack.intent.name != "convertible_bond":
+            return ""
+        tool = next((item for item in pack.tools if item.tool == "get_convertible_detail"), None)
+        if tool is None or not isinstance(tool.data, dict):
+            return ""
+        asset = tool.data.get("asset") or {}
+        snapshot = tool.data.get("snapshot") or {}
+        row = tool.data.get("source_row") or tool.data.get("dashboard_row") or snapshot.get("payload_json") or {}
+        code = str(row.get("bond_code") or row.get("code") or snapshot.get("bond_code") or asset.get("code") or pack.intent.entities.get("code") or "")
+        name = str(row.get("bond_name") or row.get("name") or snapshot.get("bond_name") or asset.get("name") or code or "该转债")
+        if not row and not snapshot:
+            return f"当前最新日报、数据库和配置的 Wind 可转债文件都没有找到{name}（{code or '--'}）的有效转债详情；系统不会用库外信息补猜。"
+
+        qualification = self._qualification_label(str(row.get("qualification") or ""))
+        eligible = "是" if row.get("eligible_for_top") is True else "否"
+        reason = str(row.get("not_top_reason") or row.get("excluded_reason") or row.get("rank_reason") or tool.summary or "--")
+        price = self._fmt_metric(row.get("price", snapshot.get("price")))
+        premium = self._fmt_metric(row.get("conversion_premium_rate", snapshot.get("conversion_premium_rate")))
+        ytm = self._fmt_metric(row.get("ytm", snapshot.get("ytm")))
+        rating = str(row.get("bond_rating") or row.get("rating") or "--")
+        size = self._fmt_metric(row.get("remaining_size"))
+        redemption = str(row.get("redemption_status") or "--")
+        score = self._fmt_metric(row.get("score", snapshot.get("score")))
+        grade = str(row.get("score_grade") or "--")
+        risk = str(row.get("risk_level") or "--")
+        notes = self._fmt_notes(row.get("quality_notes") or row.get("risk_flags"))
+        source = str(row.get("detail_source") or ("sqlite_snapshot" if snapshot else "dashboard"))
+
+        return "\n\n".join(
+            [
+                f"结论：{name}（{code or '--'}）截至 {pack.report_date} 不进入合格 Top 候选。当前分层：{qualification}；是否可进合格 Top：{eligible}。",
+                f"核心原因：{reason}",
+                (
+                    f"当前字段：价格 {price}，转股溢价率 {premium}，YTM {ytm}，评级 {rating}，"
+                    f"存续规模 {size}，强赎状态 {redemption}，评分 {score}，评分等级 {grade}，风险等级 {risk}。"
+                ),
+                f"风险备注：{notes or '--'}",
+                "规则口径：可转债先做价格、评级、强赎、YTM、溢价率、规模和基本面等风控，再做候选资格分层；弱观察和风险观察不补进合格 Top。",
+                f"来源：{source}、dashboard.convertible_bond、SQLite asset_master、configs/strategy_params.json。",
+            ]
+        )
+
     def _fmt_metric(self, value: Any) -> str:
         number = self._to_float(value)
         if number is None:
@@ -433,6 +480,21 @@ class ChatOrchestrator:
         if abs(number) >= 100:
             return f"{number:.2f}"
         return f"{number:.4f}".rstrip("0").rstrip(".")
+
+    def _fmt_notes(self, value: Any) -> str:
+        if isinstance(value, list):
+            return "；".join(str(item) for item in value if item not in {None, ""})
+        return str(value or "")
+
+    def _qualification_label(self, value: str) -> str:
+        return {
+            "qualified": "合格候选",
+            "top10": "合格候选",
+            "weak_watch": "弱观察候选",
+            "risk_watch": "风险观察",
+            "ranked_candidates": "候选池",
+            "excluded": "排除列表",
+        }.get(value, value or "--")
 
     def _to_float(self, value: Any) -> float | None:
         try:
@@ -760,6 +822,8 @@ class ChatOrchestrator:
             intent_name = "etf_detail"
         elif asset.get("asset_type") == "TL":
             intent_name = "tl_timing"
+        elif asset.get("asset_type") == "CONVERTIBLE":
+            intent_name = "convertible_bond"
         else:
             intent_name = intent.name
 

@@ -65,13 +65,21 @@ class ChatRouter:
         for key in ("etfWatchlist", "etfBuyCandidates", "etfSellAlerts"):
             universe.extend(dashboard.get(key, []))
         universe.extend((dashboard.get("etf") or {}).get("all_signals", []))
+        cb = dashboard.get("convertible_bond") or {}
+        for key in ("top10", "qualified", "weak_watch", "risk_watch", "candidates", "ranked_candidates", "excluded"):
+            universe.extend(cb.get(key, []))
+        for key in ("cbTop10", "cbRanked", "cbExcluded"):
+            universe.extend(dashboard.get(key, []))
         for row in universe:
-            name = str(row.get("name", ""))
-            code = str(row.get("code", ""))
+            name = str(row.get("name") or row.get("bond_name") or "")
+            code = str(row.get("code") or row.get("bond_code") or "")
             aliases = {name}
             if name.endswith("ETF"):
                 aliases.add(name.removesuffix("ETF"))
             aliases.add(name.replace("ETF", ""))
+            if name.endswith("转债"):
+                aliases.add(name.removesuffix("转债"))
+            aliases.add(code.replace(".SH", "").replace(".SZ", ""))
             aliases = {alias for alias in aliases if alias}
             if any(alias in question for alias in aliases):
                 entities["name"] = name
