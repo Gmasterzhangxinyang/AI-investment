@@ -9,6 +9,7 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from superpower.chat.orchestrator import ChatOrchestrator
+from superpower.chat.guardrails import ChatGuardrails
 from superpower.chat.router import ChatRouter
 from superpower.chat.schemas import ChatIntent, EvidencePack, ToolResult
 
@@ -54,6 +55,24 @@ def test_unknown_named_etf_answer_does_not_guess() -> None:
     assert "没有这只 ETF 的有效数据" in answer
     assert "不会用库外信息补猜" in answer
     assert "量能倍数" not in answer
+
+
+def test_guardrail_allows_position_path_entry_candidate_wording() -> None:
+    text = "持仓路径：系统当前把它识别为“持仓中”。持仓中才检查平仓提示；空仓或已平仓才检查建仓候选和关注池。"
+
+    result = ChatGuardrails().validate_output(text, ChatIntent("etf_detail", 0.93, {}), [])
+
+    assert result.passed
+    assert result.text == text
+
+
+def test_guardrail_still_blocks_entry_advice_without_signal() -> None:
+    text = "建议建仓这只ETF。"
+
+    result = ChatGuardrails().validate_output(text, ChatIntent("etf_detail", 0.93, {}), [])
+
+    assert not result.passed
+    assert "ETF 建仓/买入表述缺少确定性 entry 信号依据。" in result.issues
 
 
 def test_single_etf_answer_uses_rule_evidence_from_dashboard_signal() -> None:

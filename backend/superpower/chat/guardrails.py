@@ -63,7 +63,7 @@ class ChatGuardrails:
             return False
         positive_patterns = [
             r"(建议|可以|可考虑|适合|触发|满足|给出).{0,12}(买入|建仓|入场)",
-            r"(买入|建仓|入场).{0,12}(建议|信号|候选|条件满足|触发)",
+            r"(买入|建仓|入场).{0,12}(建议|信号|条件满足|触发)",
         ]
         return any(re.search(pattern, text, flags=re.I) for pattern in positive_patterns)
 
