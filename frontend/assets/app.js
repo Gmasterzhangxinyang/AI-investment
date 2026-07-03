@@ -11,6 +11,7 @@ const state = {
   dbStatus: null,
   isChatting: false,
   isDeepReviewing: false,
+  aiChatEnabled: false,
 };
 
 const pageTitles = {
@@ -891,10 +892,27 @@ function dailyReportMode(summary) {
 }
 
 function chatModelStatus() {
+  if (!state.aiChatEnabled) return "规则模式";
   const latest = state.dbStatus?.chatModel?.latest;
   const fallbackModel = state.data?.llmUsage?.llm_model || pick(state.data?.summary || [], "日报解释模型") || pick(state.data?.summary || [], "LLM模型");
   if (latest?.llm_used) return `已连接 ${latest.llm_model || fallbackModel || ""}`.trim();
   return fallbackModel && fallbackModel !== "--" ? `已配置 ${fallbackModel}` : "待验证";
+}
+
+function toggleAiChatMode() {
+  const button = document.getElementById("ai-chat-toggle");
+  if (!state.aiChatEnabled) {
+    const ok = window.confirm("开启 AI 智能问答后，系统才会调用大模型解释本地证据。交易信号、排名和风险分层仍以规则代码为准。确认开启？");
+    if (!ok) return;
+    state.aiChatEnabled = true;
+  } else {
+    state.aiChatEnabled = false;
+  }
+  if (button) {
+    button.classList.toggle("is-on", state.aiChatEnabled);
+    button.textContent = state.aiChatEnabled ? "AI 已开启" : "AI 智能问答";
+  }
+  render();
 }
 
 function renderWatchlist(rows, history) {
@@ -1061,6 +1079,16 @@ async function submitChat(question) {
       thinking.querySelector(".message-body span").textContent = `Trace ${localResult.traceId} · ${localResult.intent.name} · ${localResult.llmModel}`;
       attachAnalysisDetails(thinking, localResult, question);
       renderAgentRuntime(localResult);
+      return;
+    }
+
+    if (!state.aiChatEnabled) {
+      const ruleResult = localChatResult(localAnswer(question), "rule_based_chat", "ai_chat_not_enabled", "Local rule answer", "frontend.dashboard.summary");
+      liveStream.finish(ruleResult);
+      await streamAnswer(thinking, ruleResult.answer);
+      thinking.querySelector(".message-body span").textContent = "规则问答模式 · 未启用 AI 智能问答";
+      attachAnalysisDetails(thinking, ruleResult, question);
+      renderAgentRuntime(ruleResult);
       return;
     }
 
@@ -1426,6 +1454,15 @@ function localDeterministicChat(question) {
   const isEtf = text.includes("etf");
   const asksCount = ["一共", "多少", "几个", "数量", "有多少"].some((token) => question.includes(token));
 
+  const etfAnswer = localEtfAssetAnswer(question);
+  if (etfAnswer) return localChatResult(etfAnswer, "etf_detail", "local_etf_detail_answer", "Local ETF detail", "frontend.dashboard.etf.all_signals");
+
+  const cbAnswer = localConvertibleAnswer(question);
+  if (cbAnswer) return localChatResult(cbAnswer, "convertible_bond", "local_convertible_detail_answer", "Local convertible detail", "frontend.dashboard.convertible_bond + cbExcluded");
+
+  const tlAnswer = localTlAnswer(question);
+  if (tlAnswer) return localChatResult(tlAnswer, "tl_timing", "local_tl_detail_answer", "Local TL timing", "frontend.dashboard.tlToday");
+
   if (isEtf && asksCount) {
     const etfAssets = state.assets.filter((asset) => asset.asset_type === "ETF");
     if (etfAssets.length) {
@@ -1454,6 +1491,137 @@ function localDeterministicChat(question) {
   }
 
   return null;
+}
+
+function localChatResult(answer, intentName, reason, title, source) {
+  return {
+    status: "success",
+    answer,
+    intent: { name: intentName, confidence: 1 },
+    steps: [
+      { name: "LocalDashboard", status: "success", detail: "从当前页面已加载的 dashboard 读取确定性证据。" },
+      { name: "DeterministicAnswerAgent", status: "success", detail: "按本地规则字段生成回答，不调用模型补猜。" },
+      { name: "OutputGuardrail", status: "success", detail: "未改写信号、排名或风险分层。" },
+    ],
+    evidence: [{ title, summary: "当前回答来自本地日报数据和规则字段。", source }],
+    traceId: "local",
+    llmUsed: false,
+    llmModel: "local_deterministic",
+    llmReason: reason,
+    guardrail: { passed: true, issues: [] },
+  };
+}
+
+function localEtfAssetAnswer(question) {
+  const row = findLocalEtfRow(question);
+  if (!row) return "";
+  const threshold = state.strategyParams?.etf?.buy_volume_ratio_min ?? "--";
+  const name = row.name || "--";
+  const code = row.code || "--";
+  const date = String(row.date || row.trade_date || state.data?.reportDate || "").slice(0, 10);
+  const action = row.display_action || signalActionText(row) || "未触发";
+  const reason = row.signal_reason || row.reason || row.missing_condition || "--";
+  const recent = localEtfRecentLine(code);
+  const lines = [
+    `结论：${name}（${code}）截至 ${date || "--"} 的今日判断是：${action}。`,
+    `持仓路径：系统当前把它识别为“${row.position_status || "--"}”。持仓中才检查平仓提示；空仓或已平仓才检查建仓候选和关注池。`,
+    `今日指标：收盘 ${formatNumber(row.close)}，MA5 ${formatNumber(row.ma5)}，MA10 ${formatNumber(row.ma10)}，MA20 ${formatNumber(row.ma20)}，MA60 ${formatNumber(row.ma60)}，量能倍数 ${formatNumber(row.vol_ratio60)}，MACD柱 ${formatNumber(row.macd_hist)}，DIF ${formatNumber(row.metrics?.dif)}，DEA ${formatNumber(row.metrics?.dea)}，评分 ${formatNumber(row.score)}。`,
+    `规则证据：${row.ma5_ma10_signal || "--"}；${row.ma5_ma20_status || "--"}；${row.volume_check || "--"}。判断理由：${reason}`,
+  ];
+  if (recent) lines.push(recent);
+  lines.push(`动作提示：当前未触发建仓候选时，继续跟踪 MA5 上穿、MACD 改善/金叉和量能倍数是否达到 ${threshold}。`);
+  lines.push("来源：本地 dashboard.etf.all_signals、策略参数。");
+  return lines.join("\n\n");
+}
+
+function findLocalEtfRow(question) {
+  const rows = state.data?.etf?.all_signals || state.data?.etfAllSignals || [];
+  return rows.find((row) => localRowMatchesQuestion(row, question, "ETF")) || null;
+}
+
+function signalActionText(row) {
+  const mapping = {
+    buy_candidate: "模型触发建仓候选",
+    sell_alert: "模型触发平仓提示",
+    watch: "进入观察池",
+    neutral: "未触发",
+    data_unavailable: "数据不足，无法判断",
+  };
+  return mapping[row.signal_type || row.action] || "";
+}
+
+function localEtfRecentLine(code) {
+  const rows = (state.data?.etfDetailHistory || []).filter((row) => row.code === code);
+  if (rows.length < 2) return "";
+  const sorted = [...rows].sort((left, right) => String(left.date || left.trade_date).localeCompare(String(right.date || right.trade_date)));
+  const latest = sorted[sorted.length - 1];
+  const previous = sorted[sorted.length - 2];
+  const close = Number(latest.close ?? latest["收盘价"]);
+  const prevClose = Number(previous.close ?? previous["收盘价"]);
+  if (!Number.isFinite(close) || !Number.isFinite(prevClose) || prevClose === 0) return "";
+  const change = close / prevClose - 1;
+  const direction = change > 0 ? "上涨" : change < 0 ? "下跌" : "持平";
+  return `最近一日变化：较上一有效交易日${direction} ${(change * 100).toFixed(2)}%，这只是行情事实，不改变今日规则判断。`;
+}
+
+function localConvertibleAnswer(question) {
+  const hit = findLocalConvertibleRow(question);
+  if (!hit) return "";
+  const row = hit.row;
+  const name = row.bond_name || row.name || "--";
+  const code = row.bond_code || row.code || "--";
+  const reason = row.not_top_reason || row.excluded_reason || row.rank_reason || "--";
+  return [
+    `结论：${name}（${code}）截至 ${state.data?.reportDate || "--"} 不进入合格 Top 候选。当前分层：${qualificationLabel(row.qualification || hit.bucket)}；是否可进合格 Top：${row.eligible_for_top === true ? "是" : "否"}。`,
+    `核心原因：${reason}`,
+    `当前字段：价格 ${formatNumber(row.price)}，转股溢价率 ${formatNumber(row.conversion_premium_rate)}，YTM ${formatNumber(row.ytm)}，评级 ${row.bond_rating || row.rating || "--"}，存续规模 ${formatNumber(row.remaining_size)}，强赎状态 ${row.redemption_status || "--"}，评分 ${formatNumber(row.score)}，评分等级 ${row.score_grade || "--"}，风险等级 ${row.risk_level || "--"}。`,
+    `风险备注：${formatNumber(row.quality_notes || row.risk_flags || "--")}`,
+    "规则口径：可转债先做价格、评级、强赎、YTM、溢价率、规模和基本面等风控，再做候选资格分层；弱观察和风险观察不补进合格 Top。",
+    "来源：本地 dashboard.convertible_bond、cbExcluded、策略参数。",
+  ].join("\n\n");
+}
+
+function findLocalConvertibleRow(question) {
+  const cb = state.data?.convertible_bond || {};
+  const buckets = [
+    ["qualified", cb.qualified || cb.top10 || state.data?.cbTop10 || []],
+    ["weak_watch", cb.weak_watch || []],
+    ["risk_watch", cb.risk_watch || []],
+    ["ranked_candidates", [...(cb.candidates || []), ...(cb.ranked_candidates || []), ...(state.data?.cbRanked || [])]],
+    ["excluded", [...(cb.excluded || []), ...(state.data?.cbExcluded || [])]],
+  ];
+  for (const [bucket, rows] of buckets) {
+    const row = rows.find((item) => localRowMatchesQuestion({ ...item, name: item.bond_name || item.name, code: item.bond_code || item.code }, question, "转债"));
+    if (row) return { bucket, row };
+  }
+  return null;
+}
+
+function localTlAnswer(question) {
+  if (!question.includes("TL") && !question.includes("tl") && !question.includes("国债")) return "";
+  const row = state.data?.tlToday?.[0];
+  if (!row) return "";
+  const date = String(row.date || state.data?.reportDate || "").slice(0, 10);
+  return [
+    `结论：${row.name || "30年国债期货TL"}（${row.code || "TL.CFE"}）截至 ${date || "--"} 的今日状态是：${row.display_status || row.state || row.action || "--"}。`,
+    `今日指标：收盘 ${formatNumber(row["收盘价"])}，MA5 ${formatNumber(row.ma5)}，MA10 ${formatNumber(row.ma10)}，MA20 ${formatNumber(row.ma20)}，MA60 ${formatNumber(row.ma60)}，量能倍数 ${formatNumber(row.vol_ratio60)}。`,
+    `日线证据：MACD柱 ${formatNumber(row.macd_hist)}，KDJ J ${formatNumber(row.kdj_j)}；日线MACD判断：${row.daily_macd_reason || "--"}；日线KDJ检查：${row.daily_kdj_threshold_check || "--"}`,
+    `周线证据：MACD柱 ${formatNumber(row.week_macd_hist)}，KDJ J ${formatNumber(row.week_kdj_j)}；周线MACD判断：${row.weekly_macd_reason || "--"}；周线KDJ检查：${row.weekly_kdj_threshold_check || "--"}`,
+    `规则结论：${row.reason || "--"}`,
+    row.rule_hits ? `规则命中：${row.rule_hits}` : "",
+    `动作提示：${row.no_trade_signal ? "当前属于不做交易路径；周线不做交易或KDJ低位反弹条件不满足时，日线改善不能单独升级为建仓。" : row.attention_signal ? "当前属于关注交易路径；继续观察日线/周线KDJ低位反弹条件是否补齐。" : "当前未触发明确建仓候选。"}`,
+    row.risk_notes ? `边界说明：${row.risk_notes}` : "",
+    "来源：本地 dashboard.tlToday、dashboard.tlRecent、策略参数。",
+  ].filter(Boolean).join("\n\n");
+}
+
+function localRowMatchesQuestion(row, question, suffix) {
+  const rawName = String(row.name || "");
+  const code = String(row.code || "");
+  const aliases = [rawName, code, code.replace(".SH", "").replace(".SZ", "")];
+  if (suffix && rawName.endsWith(suffix)) aliases.push(rawName.slice(0, -suffix.length));
+  if (suffix === "ETF") aliases.push(rawName.replace("ETF", ""));
+  return aliases.filter(Boolean).some((alias) => question.includes(alias));
 }
 
 function localAnswer(question) {
@@ -1535,6 +1703,7 @@ function setActiveView() {
 document.getElementById("refresh-data").addEventListener("click", refreshData);
 document.getElementById("deep-review").addEventListener("click", runDeepReview);
 document.getElementById("export-pdf").addEventListener("click", exportPdf);
+document.getElementById("ai-chat-toggle")?.addEventListener("click", toggleAiChatMode);
 document.getElementById("save-params")?.addEventListener("click", saveStrategyParams);
 document.getElementById("asset-search")?.addEventListener("input", renderAssets);
 document.getElementById("chat-form").addEventListener("submit", (event) => {

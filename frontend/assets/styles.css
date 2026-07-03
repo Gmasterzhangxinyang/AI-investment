@@ -2321,7 +2321,7 @@ body[data-view="chat"] .view.active {
   width: min(680px, 100%);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   min-height: 52px;
@@ -2356,6 +2356,22 @@ body[data-view="chat"] .view.active {
   border-color: #202123;
   background: #202123;
   color: var(--white);
+}
+
+.chat-composer .ai-mode-toggle {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 22px;
+  border-color: #dedede;
+  background: #f7f7f7;
+  color: #424245;
+  white-space: nowrap;
+}
+
+.chat-composer .ai-mode-toggle.is-on {
+  border-color: #0071e3;
+  background: #e8f2ff;
+  color: #005bb5;
 }
 
 .quick-prompts {
