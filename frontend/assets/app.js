@@ -10,7 +10,6 @@ const state = {
   strategyParams: null,
   dbStatus: null,
   isChatting: false,
-  isDeepReviewing: false,
   aiChatEnabled: false,
 };
 
@@ -40,7 +39,7 @@ const refreshStepLabels = {
   "convertible-bond-agent": "筛选并打分可转债",
   "backtest-agent": "执行运行诊断",
   "risk-agent": "生成组合风险提示",
-  "ai-research-committee-agent": "生成 AI 复核意见",
+  "ai-research-committee-agent": "生成审计摘要",
   "explanation-agent": "生成客户可读解释",
   "report-agent": "生成日报文件和前端数据",
   "qa-audit": "复核日报数据是否一致",
@@ -737,7 +736,6 @@ function render() {
     (data.dataQuality || []).filter((row) => String(row.item || "").includes("可转债") || String(row.item || "").includes("强赎") || String(row.item || "").includes("YTM") || String(row.item || "").includes("评级")),
     [["item", "识别项"], ["status", "状态"], ["detail", "详情"], ["note", "处理说明"]],
   );
-  renderAICommittee(data.aiCommitteeReviews || []);
   renderTable("quality-table", data.dataQuality || [], [
     ["item", "识别项"],
     ["status", "状态"],
@@ -794,7 +792,6 @@ function renderContext(summary) {
     "TL MACD/KDJ择时",
     "可转债排序",
     "数据质检",
-    "复核意见",
     "运行审计日志",
   ];
   document.getElementById("context-sources").innerHTML = sources.map((item) => `<li>${item}</li>`).join("");
@@ -1017,33 +1014,6 @@ function renderCbSummary(summary) {
   const message = document.getElementById("cb-quality-message");
   if (title) title.textContent = summary.top_display_title || "可转债 Top10 候选";
   if (message) message.textContent = summary.quality_message || "";
-}
-
-function renderAICommittee(rows) {
-  const container = document.getElementById("ai-committee-list");
-  if (!rows.length) {
-    container.innerHTML = `<div class="empty-state">暂无复核结果</div>`;
-    return;
-  }
-  container.innerHTML = rows
-    .map((row) => {
-      const statusClass = row.llm_used ? "ok" : "warn";
-      const statusText = row.llm_used ? "已复核" : "规则模板";
-      const reviewBasis = row.reason || row.model || "--";
-      return `
-        <article class="ai-note">
-          <div class="ai-note-head">
-            <div>
-              <div class="ai-role">${escapeHtml(row.title || row.role)}</div>
-              <div class="ai-model">${escapeHtml(reviewBasis)}</div>
-            </div>
-            <span class="tag ${statusClass}">${statusText}</span>
-          </div>
-          <p>${escapeHtml(row.review || "")}</p>
-        </article>
-      `;
-    })
-    .join("");
 }
 
 function pickSummary(rows, item, fallbackItem) {
@@ -1303,38 +1273,6 @@ async function submitChat(question) {
   } finally {
     if (timeoutId) window.clearTimeout(timeoutId);
     state.isChatting = false;
-  }
-}
-
-async function runDeepReview() {
-  if (state.isDeepReviewing) return;
-  state.isDeepReviewing = true;
-  const button = document.getElementById("deep-review");
-  const status = document.getElementById("deep-review-status");
-  const originalText = button?.textContent || "AI 深度复核";
-  if (button) {
-    button.disabled = true;
-    button.textContent = "复核中";
-  }
-  if (status) status.textContent = "正在启动四角色深度复核。该过程只解释和审稿，不会改写任何策略信号。";
-
-  try {
-    const response = await fetch("/api/deep-review", { method: "POST" });
-    const result = await response.json();
-    if (!response.ok || result.status !== "success") {
-      throw new Error(result.message || `HTTP ${response.status}`);
-    }
-    state.data.aiCommitteeReviews = result.reviews || [];
-    renderAICommittee(state.data.aiCommitteeReviews);
-    if (status) status.textContent = "AI 深度复核已完成。结果只作为审稿意见，不改变信号和排名。";
-  } catch (error) {
-    if (status) status.textContent = `AI 深度复核未完成：${error.message}。日报仍使用稳定模式。`;
-  } finally {
-    state.isDeepReviewing = false;
-    if (button) {
-      button.disabled = false;
-      button.textContent = originalText;
-    }
   }
 }
 
@@ -1873,7 +1811,6 @@ function setActiveView() {
 }
 
 document.getElementById("refresh-data").addEventListener("click", refreshData);
-document.getElementById("deep-review").addEventListener("click", runDeepReview);
 document.getElementById("export-pdf").addEventListener("click", exportPdf);
 document.getElementById("ai-chat-toggle")?.addEventListener("click", toggleAiChatMode);
 document.getElementById("save-params")?.addEventListener("click", saveStrategyParams);
