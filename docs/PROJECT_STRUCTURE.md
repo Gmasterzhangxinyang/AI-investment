@@ -1,7 +1,7 @@
 # Project Structure
 
 This project is a local AI research workflow for ETF, TL futures, and convertible bonds.
-The trading signals are deterministic; LLMs are used only for review, explanation, and chat.
+The trading signals are deterministic; LLMs are used only for optional review, explanation, and chat.
 
 ## Source Code
 
@@ -164,16 +164,16 @@ delivery.json
 
 Strategy thresholds and weights should live in `strategy_params.json`, not hard-coded inside strategy handlers.
 
-Customer-facing product guidance is documented in `docs/CLIENT_PRODUCT_GUIDE.md`.
+Product guidance is documented in `docs/CLIENT_PRODUCT_GUIDE.md`.
 
 Internal parameter meanings, tuning direction, and maintenance explanations are documented in `docs/STRATEGY_PARAMETERS.md`.
 
 ## Runtime Data
 
-These directories are generated or customer-specific. They are ignored by `.gitignore` and should not be mixed into source delivery.
+These directories are generated or local-data-specific. They are ignored by `.gitignore` and should not be mixed into source control.
 
 ```text
-data/wind/current/*.xlsx       current customer Wind Excel snapshots
+data/wind/current/*.xlsx       current local Wind Excel snapshots
 data/archive/                  per-run source file archives and manifests
 data/research.db*              local SQLite database and WAL files
 data/db_backups/               database backups
@@ -194,7 +194,7 @@ __pycache__/
 .pytest_cache/
 ```
 
-Usually safe to archive or clear before source delivery:
+Usually safe to archive or clear before publishing or sharing the source tree:
 
 ```text
 outputs/*
@@ -210,7 +210,7 @@ data/wind/current/*.xlsx
 data/research.db
 outputs/latest/dashboard.json
 outputs/latest/audit.json
-latest client reports under outputs/
+latest local reports under outputs/
 ```
 
 ## Health Checks

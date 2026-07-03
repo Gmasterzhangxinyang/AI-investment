@@ -1,6 +1,6 @@
 # Dashboard Schema
 
-`outputs/latest/dashboard.json` 是前端、AI 问答、PDF 导出和 SQLite 入库共同读取的稳定数据契约。交付版保留旧字段以兼容前端，同时新增固定顶层键：
+`outputs/latest/dashboard.json` 是前端、AI 问答、PDF 导出和 SQLite 入库共同读取的稳定数据契约。为兼容历史前端和下游脚本，部分旧字段会继续保留，同时新增固定顶层键：
 
 ```text
 run_info
@@ -131,8 +131,8 @@ code, name, excluded_reason, qualification, eligible_for_top, not_top_reason
 
 固定包含：
 
-- `headline`: 客户可读摘要
-- `key_points`: 客户可读要点
+- `headline`: 用户可读摘要
+- `key_points`: 用户可读要点
 - `key_metrics`: 首页指标
 - `risk_notes`: 最重要的风险提示，默认取前三条展示
 - `top_risk_notes`: 最重要的风险提示，默认取前三条展示

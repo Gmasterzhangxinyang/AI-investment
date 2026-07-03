@@ -39,13 +39,13 @@ Optional fields used when present:
 份额变化（亿份）
 ```
 
-The split customer template may also include the control sheet `ETF清单和持仓`. When present, these fields are used:
+The split local template may also include the control sheet `ETF清单和持仓`. When present, these fields are used:
 
 ```text
 是否纳入
 ETF代码
 ETF名称
-客户状态
+持仓状态
 买入日期
 持仓数量
 备注
@@ -79,7 +79,7 @@ code
 
 ## Convertible Bonds
 
-Convertible-bond ingestion accepts the split customer template or ordinary first-row headers. These fields are used after normalization.
+Convertible-bond ingestion accepts the split local template or ordinary first-row headers. These fields are used after normalization.
 
 Core required fields:
 

@@ -25,9 +25,9 @@ Signals remain deterministic. LLM output can explain results but cannot change s
 | ETFAgent | ETF 轮动 Agent | `etf-rotation-strategy` | `etf_signal_table`, `etf_buy_candidates`, `etf_watchlist`, `etf_detail_history`, `etf_sell_alerts` |
 | TLAgent | TL 择时 Agent | `tl-timing-strategy` | `tl_today`, `tl_recent` |
 | ConvertibleBondAgent | 可转债性价比 Agent | `convertible-bond-ranking` | `cb_ranked`, `cb_top10` |
-| BacktestAgent | 回测诊断 Agent | `strategy-backtest` | `backtest_summary`, `backtest_trades` |
+| BacktestAgent | 历史诊断 Agent | `strategy-backtest` | `backtest_summary`, `backtest_trades` |
 | RiskAgent | 组合风控 Agent | `portfolio-risk-control` | `risk_summary` |
-| AIResearchCommitteeAgent | AI研究委员会 Agent | `ai-research-committee` | `ai_committee_reviews` |
+| AIResearchCommitteeAgent | 证据复核 Agent | `ai-research-committee` | `ai_committee_reviews` |
 | ExplanationAgent | 投研解释 Agent | `research-explanation` | `research_summary` |
 | ReportAgent | 报告生产 Agent | `report-generation` | `report_path`, `dashboard_json_path` |
 
@@ -42,20 +42,20 @@ Large-model usage is intentionally limited to the review and language layer.
 - If the API key is missing or the request fails, the system falls back to deterministic commentary and records the reason in Agent Audit.
 - All strategy Agents are deterministic. This is intentional: LLM is a reporting/research language layer, not a trading decision engine.
 
-## AI Research Committee
+## Evidence Review Layer
 
-`AIResearchCommitteeAgent` runs four constrained review roles:
+`AIResearchCommitteeAgent` runs constrained review roles when LLM is enabled, and deterministic fallback commentary when it is not. This layer is an evidence review and language layer, not a signal generator.
 
 - DataQAAnalyst: reviews freshness, templates, missing fields, and history length.
 - StrategyReviewer: checks whether ETF/TL/convertible-bond outputs are explainable from deterministic rules.
 - RiskReviewer: reviews QA warnings, backtest limitations, and report risk language.
-- ReportWriter: drafts a client-facing conclusion from existing tables only.
+- ReportWriter: drafts a user-facing conclusion from existing tables only.
 
 These roles can critique and explain, but cannot mutate any context artifacts used by strategy or risk.
 
 ## TL Agent Contract
 
-TLAgent enforces the customer rule set:
+TLAgent enforces the configured rule set:
 
 - red MACD histogram is positive, green MACD histogram is negative
 - weekly red bar shortening, green bar lengthening, or red-to-green is no-trade

@@ -2,7 +2,7 @@
 
 ## ETF
 
-ETF assets are split by customer position state:
+ETF assets are split by configured position state:
 
 - Holding: evaluate sell/risk alerts
 - Not holding or closed: evaluate buy candidates
@@ -70,4 +70,4 @@ Weekly signals are calculated causally as of each report date. For a Wednesday r
 
 ## LLM boundary
 
-GPT-5.5 can write explanations. It cannot change signal tables, scores, backtest metrics, or risk flags.
+When enabled and explicitly used, the configured OpenAI model can write explanations from existing evidence. It cannot change signal tables, scores, historical diagnostics, or risk flags.

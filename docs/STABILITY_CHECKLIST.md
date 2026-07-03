@@ -1,6 +1,6 @@
 # Stability Checklist
 
-这份清单用于客户试跑前的稳定性交付检查。每次交付、部署或参数大改后，都建议按项复核。
+这份清单用于本地运行、发布或参数大改后的稳定性检查。每次更新代码、调整参数或更换数据模板后，都建议按项复核。
 
 ## Runtime
 
@@ -34,7 +34,7 @@
 - [ ] No banned phrases in Excel.
 - [ ] No banned phrases in frontend.
 - [ ] Disclaimer is present.
-- [ ] Backtest is described as historical diagnosis, not return proof.
+- [ ] Historical diagnostics are described as process diagnostics, not return proof.
 
 ## ETF
 
@@ -61,9 +61,9 @@
 - [ ] Missing redemption fields lower confidence.
 - [ ] Industry concentration warning is visible when triggered.
 
-## Backtest
+## Historical Diagnostics
 
-- [ ] Backtest is called historical diagnosis.
+- [ ] Historical validation is called historical diagnosis.
 - [ ] Short-term direction check uses T close signal and T+1 open execution assumption.
 - [ ] No future return promise.
 - [ ] Sample size is shown.
