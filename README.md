@@ -54,51 +54,61 @@ http://127.0.0.1:8766/frontend/
 
 ## 系统架构
 
-系统采用 `Agent -> Skill -> Tool` 的可审计结构：
+系统的核心逻辑很简单：**Wind Excel 进入系统，确定性规则生成信号，所有结果沉淀为可审计证据；AI 只读取证据做解释，不改写交易信号。**
 
-- **Agent**：日更流程中的业务角色，例如数据读取、质检、指标、ETF、TL、可转债、报告生成。
-- **Skill**：可独立测试的专业能力包，每个 Skill 都有输入输出合同和确定性实现。
-- **Tool**：底层工具层，例如 Excel 读取、指标计算、SQLite、PDF、LLM、文本安全。
+### 分层架构
+
+```text
+数据输入层       Wind Excel + configs
+                    |
+确定性计算层     数据质检 -> 指标计算 -> ETF / TL / 可转债规则
+                    |
+证据存储层       dashboard.json + SQLite + Excel日报 + Audit日志
+                    |
+产品交互层       Web工作台 + 投研问答 + PDF导出
+                    |
+可选AI层         只解释证据，不生成信号，不改排名
+```
+
+```mermaid
+flowchart TB
+    Input["数据输入层<br/>Wind Excel / 策略参数 / 持仓状态"]
+    Compute["确定性计算层<br/>数据质检 / 技术指标 / ETF / TL / 可转债"]
+    Evidence["证据存储层<br/>dashboard.json / SQLite / Excel日报 / Audit日志"]
+    Product["产品交互层<br/>Web工作台 / 投研问答 / PDF导出"]
+    AI["可选AI层<br/>解释证据 / 复核口径 / 输出校验"]
+
+    Input --> Compute --> Evidence --> Product
+    Product -.按需读取.-> Evidence
+    Product -.可选调用.-> AI
+    AI -.只解释，不改信号.-> Product
+```
+
+### 日更流水线
 
 ```mermaid
 flowchart LR
-    User["投研用户"] --> Frontend["本地 Web 工作台"]
-    Wind["Wind Excel<br/>ETF / TL / 可转债"] --> Server["serve.py 本地服务"]
-    Frontend --> Server
+    A["读取配置"] --> B["读取Excel"]
+    B --> C["数据质检"]
+    C --> D["计算指标"]
+    D --> E["生成三类资产结果"]
+    E --> F["历史诊断与风险摘要"]
+    F --> G["生成dashboard与Excel"]
+    G --> H["写入SQLite"]
 
-    Server --> Chat["投研问答<br/>意图识别 / 证据读取 / 输出校验"]
-    Server --> Workflow["日更工作流<br/>一键刷新 / 日报生成"]
-    Server --> DB["SQLite<br/>日报 / 信号 / 指标 / Trace"]
-    Server --> Export["Excel / PDF 导出"]
-
-    Workflow --> Agents["Agent Pipeline"]
-    Agents --> Skills["Skill Packages"]
-    Skills --> Tools["Excel / 指标 / 回测 / LLM / 文本安全"]
-
-    Chat --> Evidence["dashboard.json + SQLite + 策略参数"]
-    Chat --> LLM["OpenAI 可选<br/>只解释，不改写信号"]
+    E -.ETF.-> E1["建仓候选 / 平仓提示 / 关注池"]
+    E -.TL.-> E2["不做交易 / 关注交易 / 建仓候选"]
+    E -.可转债.-> E3["Top10 / 候选池 / 排除清单"]
 ```
 
-日更链路：
+### 代码组织
 
-```mermaid
-flowchart TD
-    A["配置读取"] --> B["源文件归档"]
-    B --> C["Wind Excel 解析"]
-    C --> D["持仓状态读取"]
-    D --> E["数据质量校验"]
-    E --> F["技术指标计算"]
-    F --> G["ETF 策略"]
-    F --> H["TL 状态诊断"]
-    F --> I["可转债排序"]
-    G --> J["历史诊断"]
-    H --> J
-    I --> K["风险摘要"]
-    J --> K
-    K --> L["AI 深度复核，可选"]
-    L --> M["投研解释"]
-    M --> N["Excel / dashboard.json / SQLite"]
-```
+- `backend/superpower/agents/`：日更流程中的业务节点。
+- `backend/superpower/skills/`：ETF、TL、可转债、质检、报告等确定性能力包。
+- `backend/superpower/tools/`：Excel、PDF、LLM、文本安全等底层工具。
+- `backend/superpower/chat/`：投研问答的意图识别、证据读取和输出校验。
+- `backend/superpower/db/`：SQLite schema、入库和查询。
+- `frontend/`：本地 Web 工作台。
 
 ## 数据输入
 
