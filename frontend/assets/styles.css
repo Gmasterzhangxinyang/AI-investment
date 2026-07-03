@@ -3082,6 +3082,100 @@ body:not([data-view="chat"]) .empty-state {
   border-color: #dcdcdc;
 }
 
+.report-action-grid,
+.report-asset-grid,
+.report-worklist,
+.report-risk-list {
+  display: grid;
+  gap: 12px;
+}
+
+.report-action-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.report-action,
+.report-asset-card,
+.report-worklist div,
+.report-risk-list div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.report-action {
+  min-height: 82px;
+  padding: 14px;
+}
+
+.report-action span,
+.report-asset-card span,
+.report-worklist span,
+.report-risk-list span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.report-action strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.report-asset-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.report-asset-card {
+  min-height: 190px;
+  padding: 18px;
+}
+
+.report-asset-card strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.report-asset-card p {
+  min-height: 84px;
+  margin: 14px 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.report-asset-card a {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.report-worklist {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.report-worklist div,
+.report-risk-list div {
+  padding: 14px;
+}
+
+.report-worklist strong,
+.report-risk-list strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+.report-risk-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .asset-workspace {
   display: grid;
   gap: 14px;
@@ -3136,7 +3230,11 @@ body:not([data-view="chat"]) .empty-state {
   body:not([data-view="chat"]) .page-grid,
   body:not([data-view="chat"]) .watch-grid,
   body:not([data-view="chat"]) .asset-grid,
-  body:not([data-view="chat"]) .settings-grid {
+  body:not([data-view="chat"]) .settings-grid,
+  .report-action-grid,
+  .report-asset-grid,
+  .report-worklist,
+  .report-risk-list {
     grid-template-columns: 1fr;
   }
 

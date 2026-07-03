@@ -144,38 +144,57 @@
           <div class="memo-shell">
             <div class="memo-cover">
               <p class="eyebrow">每日报告</p>
-              <h2>投研日报</h2>
+              <h2>今日投研值班台</h2>
               <span id="report-date" class="date-chip">--</span>
             </div>
             <article class="memo-section">
-              <h3>今日结论</h3>
+              <h3>今日动作结论</h3>
               <p id="research-summary">正在读取数据。</p>
+            </article>
+            <div id="daily-action-grid" class="report-action-grid"></div>
+            <div id="report-asset-cards" class="report-asset-grid"></div>
+            <article class="card">
+              <div class="section-head compact">
+                <div>
+                  <h3>今日复核清单</h3>
+                  <p>按“可复核、仅观察、不操作”归类，避免把高分或关注误读成交易信号。</p>
+                </div>
+              </div>
+              <div id="report-worklist" class="report-worklist"></div>
+            </article>
+            <div class="memo-grid">
+              <article class="card">
+                <h3>ETF 接近触发</h3>
+                <div class="table-wrap"><table id="report-etf-near-table"></table></div>
+              </article>
+              <article class="card">
+                <h3>可转债风险样例</h3>
+                <div class="table-wrap"><table id="report-cb-risk-table"></table></div>
+              </article>
+            </div>
+            <article class="card">
+              <div class="section-head compact">
+                <div>
+                  <h3>风险与数据确认</h3>
+                  <p>只列会影响客户解读的质量、审计和风控事项。</p>
+                </div>
+              </div>
+              <div id="report-risk-list" class="report-risk-list"></div>
             </article>
             <article class="card">
               <div class="section-head compact">
                 <div>
                   <h3>直达</h3>
-                  <p>按资产类别查看今日信号、解释和风险提示。</p>
+                  <p>进入对应工作区查看明细和单标的解释。</p>
                 </div>
               </div>
               <div class="shortcut-grid">
-                <a href="#etf">ETF 信号</a>
+                <a href="#etf">ETF 全量评分</a>
                 <a href="#tl">TL 状态诊断</a>
-                <a href="#cb">可转债打分</a>
+                <a href="#cb">可转债分层</a>
                 <a href="#assets">标的档案</a>
               </div>
             </article>
-            <div id="kpi-grid" class="kpi-grid"></div>
-            <div class="memo-grid">
-              <article class="card">
-                <h3>ETF 建仓候选</h3>
-                <div class="table-wrap"><table id="buy-table"></table></div>
-              </article>
-              <article class="card">
-                <h3>ETF 平仓提示</h3>
-                <div class="table-wrap"><table id="sell-table"></table></div>
-              </article>
-            </div>
             <article class="card">
               <h3>复核意见</h3>
               <p id="deep-review-status" class="plain-text">默认使用稳定模式。点击“AI 深度复核”后才启用四角色复核。</p>
@@ -418,6 +437,6 @@
       </main>
     </div>
 
-    <script src="./assets/app.js?v=20260703-rule-chat-ai-toggle-v1"></script>
+    <script src="./assets/app.js?v=20260703-report-workbench-v1"></script>
   </body>
 </html>

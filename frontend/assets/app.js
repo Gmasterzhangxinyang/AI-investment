@@ -637,7 +637,7 @@ function render() {
   document.getElementById("report-date").textContent = data.reportDate || "--";
   document.getElementById("rail-date").textContent = data.reportDate ? `日期 ${data.reportDate}` : "--";
   document.getElementById("report-link").href = data.reportPath ? reportUrl(data.reportPath) : "#";
-  document.getElementById("research-summary").textContent = data.researchSummary?.[0]?.content || "暂无解释。";
+  document.getElementById("research-summary").textContent = dailyDecisionText(data);
 
   renderKpis(summary);
   renderContext(summary);
@@ -715,6 +715,7 @@ function render() {
   const cbSummary = cb.summary || {};
   const cbTopRows = cb.top10 || data.cbTop10 || [];
   const cbRankedRows = cb.candidates || cb.ranked_candidates || data.cbRanked || [];
+  renderDailyWorkbench(data, summary);
   renderModuleKpis(summary);
   renderTable("buy-table", data.etfBuyCandidates || [], etfBuyColumns, "buy");
   renderTable("sell-table", data.etfSellAlerts || [], etfSellColumns, "sell");
@@ -800,6 +801,8 @@ function renderContext(summary) {
 }
 
 function renderKpis(summary) {
+  const node = document.getElementById("kpi-grid");
+  if (!node) return;
   const items = [
     ["ETF 建仓候选", pick(summary, "ETF建仓候选数量")],
     ["ETF 关注池", pick(summary, "ETF关注池数量")],
@@ -810,7 +813,7 @@ function renderKpis(summary) {
     ["聊天模型", chatModelStatus()],
     ["已识别风险项", pickSummary(summary, "系统已识别风险项", "数据校验异常项")],
   ];
-  document.getElementById("kpi-grid").innerHTML = items
+  node.innerHTML = items
     .map((item) => `<div class="kpi"><div class="label">${escapeHtml(item[0])}</div><div class="value">${escapeHtml(item[1])}</div></div>`)
     .join("");
 }
@@ -838,6 +841,175 @@ function renderModuleKpis(summary) {
   };
   renderItems("etf-module-kpis", etfItems);
   renderItems("cb-module-kpis", cbItems);
+}
+
+function renderDailyWorkbench(data, summary) {
+  const cb = data.convertible_bond || {};
+  const cbSummary = cb.summary || {};
+  const etfRows = rankedEtfRows(data.etf?.all_signals || data.etfAllSignals || []);
+  const tl = data.tlToday?.[0] || {};
+  const buyCount = Number(pick(summary, "ETF建仓候选数量")) || 0;
+  const watchCount = Number(pick(summary, "ETF关注池数量")) || 0;
+  const sellCount = Number(pick(summary, "ETF平仓提示数量")) || 0;
+  const qualifiedCount = Number(cbSummary.qualified_count ?? 0);
+  const weakCount = Number(cbSummary.weak_watch_count ?? 0);
+  const riskCount = Number(cbSummary.risk_watch_count ?? 0);
+  const excludedCount = Number(cbSummary.excluded_count ?? 0);
+  const canReviewCount = buyCount + sellCount + qualifiedCount;
+  const watchOnlyCount = watchCount + weakCount + riskCount + (tl.attention_signal ? 1 : 0);
+  const noActionCount = excludedCount + (tl.no_trade_signal ? 1 : 0);
+
+  renderReportActions([
+    ["今日主线", reportRegime(canReviewCount, watchOnlyCount, tl)],
+    ["可复核", `${canReviewCount} 项`],
+    ["仅观察", `${watchOnlyCount} 项`],
+    ["不操作/排除", `${noActionCount} 项`],
+  ]);
+  renderReportAssetCards([
+    {
+      title: "ETF",
+      state: buyCount ? "有建仓候选" : sellCount ? "有平仓提示" : watchCount ? "仅观察" : "未触发",
+      body: `建仓 ${buyCount}，关注 ${watchCount}，平仓 ${sellCount}。${etfRows.length ? `强弱分最高：${etfRows[0].name} ${formatNumber(etfRows[0].score)}。` : "暂无全量评分。"}`,
+      href: "#etf",
+    },
+    {
+      title: "TL",
+      state: tl.state || "--",
+      body: `${tl.reason || "暂无规则原因"}。日线：${tl.daily_macd_reason || "--"}；周线：${tl.weekly_macd_reason || "--"}。`,
+      href: "#tl",
+    },
+    {
+      title: "可转债",
+      state: qualifiedCount ? "有合格候选" : "无合格候选",
+      body: `合格 ${qualifiedCount}，弱观察 ${weakCount}，风险观察 ${riskCount}，排除 ${excludedCount}。${cbSummary.quality_message || ""}`,
+      href: "#cb",
+    },
+  ]);
+  renderReportWorklist([
+    ["可复核", canReviewCount ? "查看 ETF 建仓/平仓和可转债合格候选，进入人工复核。" : "今日没有满足完整规则的候选。"],
+    ["仅观察", watchOnlyCount ? "关注接近触发的 ETF、TL 日线改善和可转债弱/风险观察。" : "今日观察项较少。"],
+    ["不操作", noActionCount ? "被排除转债和 TL 不做交易状态不进入交易候选。" : "暂无明确排除项。"],
+  ]);
+  renderTable("report-etf-near-table", reportEtfNearRows(etfRows), [
+    ["rank", "排名"],
+    ["name", "ETF"],
+    ["score", "强弱分"],
+    ["display_action", "触发"],
+    ["volume_check", "量能"],
+    ["decision_reason", "缺口/原因"],
+  ]);
+  renderTable("report-cb-risk-table", reportCbRiskRows(data), [
+    ["bond_name", "转债"],
+    ["bond_code", "代码"],
+    ["qualification_label", "分层"],
+    ["price", "价格"],
+    ["conversion_premium_rate", "溢价率"],
+    ["ytm", "YTM"],
+    ["risk_reason", "原因"],
+  ]);
+  renderReportRiskList(data, summary);
+}
+
+function dailyDecisionText(data) {
+  const summary = data.summary || [];
+  const cbSummary = data.convertible_bond?.summary || {};
+  const tl = data.tlToday?.[0] || {};
+  const buyCount = Number(pick(summary, "ETF建仓候选数量")) || 0;
+  const watchCount = Number(pick(summary, "ETF关注池数量")) || 0;
+  const sellCount = Number(pick(summary, "ETF平仓提示数量")) || 0;
+  const qualifiedCount = Number(cbSummary.qualified_count ?? 0);
+  const actionCount = buyCount + sellCount + qualifiedCount;
+  if (actionCount > 0) {
+    return `今日存在 ${actionCount} 项可进入人工复核的规则候选。先核对 ETF 建仓/平仓和可转债合格候选，再看组合约束；AI 不改写信号。`;
+  }
+  return `今日无满足完整规则的交易候选。ETF 建仓 ${buyCount}、关注 ${watchCount}、平仓 ${sellCount}；TL 为“${tl.state || "--"}”；可转债无合格 Top 候选。今天重点是观察缺口和确认风险排除原因。`;
+}
+
+function reportRegime(actionCount, watchCount, tl) {
+  if (actionCount > 0) return "有规则候选，进入人工复核";
+  if (tl.no_trade_signal) return "防守观察，TL 不做交易";
+  if (watchCount > 0) return "无候选，观察接近触发项";
+  return "无候选，等待规则条件修复";
+}
+
+function renderReportActions(items) {
+  const node = document.getElementById("daily-action-grid");
+  if (!node) return;
+  node.innerHTML = items
+    .map((item) => `<div class="report-action"><span>${escapeHtml(item[0])}</span><strong>${escapeHtml(item[1])}</strong></div>`)
+    .join("");
+}
+
+function renderReportAssetCards(cards) {
+  const node = document.getElementById("report-asset-cards");
+  if (!node) return;
+  node.innerHTML = cards
+    .map(
+      (card) => `
+        <article class="report-asset-card">
+          <div><span>${escapeHtml(card.title)}</span><strong>${escapeHtml(card.state)}</strong></div>
+          <p>${escapeHtml(card.body)}</p>
+          <a href="${escapeHtml(card.href)}">查看明细</a>
+        </article>
+      `,
+    )
+    .join("");
+}
+
+function renderReportWorklist(items) {
+  const node = document.getElementById("report-worklist");
+  if (!node) return;
+  node.innerHTML = items
+    .map((item) => `<div><strong>${escapeHtml(item[0])}</strong><span>${escapeHtml(item[1])}</span></div>`)
+    .join("");
+}
+
+function reportEtfNearRows(rows) {
+  return rows
+    .filter((row) => row.display_action !== "模型触发建仓候选" && row.display_action !== "模型触发平仓提示")
+    .slice(0, 6);
+}
+
+function reportCbRiskRows(data) {
+  const cb = data.convertible_bond || {};
+  const rows = [
+    ...(cb.risk_watch || []),
+    ...(cb.weak_watch || []),
+    ...(cb.excluded || []),
+    ...(data.cbExcluded || []),
+  ];
+  const seen = new Set();
+  return rows
+    .filter((row) => {
+      const code = row.bond_code || row.code;
+      if (!code || seen.has(code)) return false;
+      seen.add(code);
+      return true;
+    })
+    .slice(0, 8)
+    .map((row) => ({
+      ...row,
+      qualification_label: qualificationLabel(row.qualification),
+      risk_reason: row.not_top_reason || row.excluded_reason || row.rank_reason || formatNumber(row.quality_notes || row.risk_flags || "--"),
+    }));
+}
+
+function renderReportRiskList(data, summary) {
+  const node = document.getElementById("report-risk-list");
+  if (!node) return;
+  const riskItems = pickSummary(summary, "系统已识别风险项", "数据校验异常项");
+  const auditWarns = pick(summary, "回测诊断WARN数量");
+  const llmMode = dailyReportMode(summary);
+  const qualityWarns = (data.dataQuality || []).filter((row) => !["OK", "INFO", "SUCCESS"].includes(String(row.status || "").toUpperCase())).slice(0, 3);
+  const items = [
+    ["风险项", `${riskItems} 项已识别，需在交易前确认。`],
+    ["历史诊断", `WARN ${auditWarns}，只用于流程诊断，不作为收益验证。`],
+    ["日报解释", `${llmMode}；规则结果不依赖 AI。`],
+    ...qualityWarns.map((row) => [row.item || "数据质量", row.note || row.detail || row.status || "--"]),
+  ];
+  node.innerHTML = items
+    .map((item) => `<div><strong>${escapeHtml(item[0])}</strong><span>${escapeHtml(item[1])}</span></div>`)
+    .join("");
 }
 
 function renderCbSummary(summary) {
