@@ -242,6 +242,10 @@ class ChatOrchestrator:
         if rule_contract and isinstance(rule_contract.data, dict):
             params = rule_contract.data.get("strategy_params") or {}
 
+        missing_etf_answer = self._missing_etf_data_answer(pack)
+        if missing_etf_answer:
+            return missing_etf_answer
+
         etf_asset_answer = self._single_etf_diagnosis_answer(pack, params)
         if etf_asset_answer:
             return etf_asset_answer
@@ -315,6 +319,20 @@ class ChatOrchestrator:
                     )
 
         return ""
+
+    def _missing_etf_data_answer(self, pack: EvidencePack) -> str:
+        if pack.intent.name != "etf_detail":
+            return ""
+        entities = pack.intent.entities
+        if entities.get("code"):
+            return ""
+        name = entities.get("name")
+        if not name or entities.get("asset_type") != "ETF":
+            return ""
+        return (
+            f"当前不知道{name}的情况：最新日报和数据库里没有这只 ETF 的有效数据。\n\n"
+            "系统不会用库外信息补猜，也不会编造技术指标。请先确认 Wind ETF 文件包含该标的，并重新点击一键刷新。"
+        )
 
     def _single_etf_diagnosis_answer(self, pack: EvidencePack, params: dict[str, Any]) -> str:
         tool = next((item for item in pack.tools if item.tool == "get_etf_single_asset"), None)

@@ -23,6 +23,39 @@ def test_router_resolves_etf_from_all_signals_before_parameter_questions() -> No
     assert intent.entities["code"] == "512760.SH"
 
 
+def test_unknown_named_etf_routes_to_no_data_answer() -> None:
+    dashboard = {"etf": {"all_signals": [{"name": "芯片ETF", "code": "512760.SH"}]}}
+
+    intent = ChatRouter().route("纳指ETF量能怎么样？", dashboard)
+
+    assert intent.name == "etf_detail"
+    assert intent.entities["name"] == "纳指ETF"
+    assert intent.entities["not_found"] == "true"
+
+
+def test_unknown_named_etf_answer_does_not_guess() -> None:
+    pack = EvidencePack(
+        report_date="2026-06-26",
+        intent=ChatIntent("etf_detail", 0.91, {"name": "纳指ETF", "asset_type": "ETF", "not_found": "true"}),
+        rulebook=[],
+        tools=[
+            ToolResult(
+                tool="get_rule_contract",
+                title="Rule contract",
+                source="configs.strategy_params",
+                summary="",
+                data={"strategy_params": {"etf": {"buy_volume_ratio_min": 1.1}}},
+            ),
+        ],
+    )
+
+    answer = ChatOrchestrator(ROOT)._deterministic_evidence_answer("纳指ETF量能怎么样？", pack)
+
+    assert "没有这只 ETF 的有效数据" in answer
+    assert "不会用库外信息补猜" in answer
+    assert "量能倍数" not in answer
+
+
 def test_single_etf_answer_uses_rule_evidence_from_dashboard_signal() -> None:
     pack = EvidencePack(
         report_date="2026-06-26",

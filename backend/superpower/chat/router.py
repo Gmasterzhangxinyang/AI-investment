@@ -16,6 +16,9 @@ class ChatRouter:
         if (entities.get("code") or entities.get("name")) and "etf" in text:
             if any(token in text for token in ["状态", "怎么样", "如何", "哪里", "问题", "量能", "趋势", "原因", "为什么", "触发", "分析", "解释"]):
                 return ChatIntent("etf_detail", 0.94, entities)
+        unknown_etf_name = self._unknown_etf_name(question)
+        if unknown_etf_name and any(token in text for token in ["状态", "怎么样", "如何", "哪里", "问题", "量能", "趋势", "原因", "为什么", "触发", "分析", "解释"]):
+            return ChatIntent("etf_detail", 0.91, {"name": unknown_etf_name, "asset_type": "ETF", "not_found": "true"})
         if any(token in text for token in ["数据库", "db", "sqlite"]):
             if any(token in text for token in ["标的", "名字", "名称", "名单", "有啥", "有什么", "所有", "列表", "列出"]):
                 return ChatIntent("asset_list", 0.95, entities)
@@ -76,3 +79,11 @@ class ChatRouter:
                     entities["code"] = code
                 break
         return entities
+
+    def _unknown_etf_name(self, question: str) -> str:
+        for match in re.findall(r"([A-Za-z0-9\u4e00-\u9fff]{1,24}?ETF)", question, flags=re.IGNORECASE):
+            name = match.strip()
+            if name.upper() == "ETF":
+                continue
+            return name
+        return ""
