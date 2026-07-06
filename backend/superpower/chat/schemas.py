@@ -11,6 +11,7 @@ class ChatRequest:
     question: str
     session_id: str = "default"
     user_id: str = "local-user"
+    short_term_memory: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class EvidencePack:
     intent: ChatIntent
     rulebook: list[str]
     tools: list[ToolResult]
+    memory_context: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

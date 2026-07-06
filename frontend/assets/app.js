@@ -1,3 +1,5 @@
+const CHAT_MEMORY_KEY = "ai_research_short_term_memory_v1";
+
 const state = {
   data: null,
   isRefreshing: false,
@@ -8,9 +10,16 @@ const state = {
   selectedAssetCode: null,
   assetDetail: null,
   strategyParams: null,
+  modelConfig: null,
+  openaiModels: [],
+  openaiModelSource: "",
+  openaiModelMessage: "",
+  isEditingOpenAiKey: false,
+  openaiConnection: null,
   dbStatus: null,
   isChatting: false,
   aiChatEnabled: false,
+  chatMemory: loadShortTermMemory(),
 };
 
 const pageTitles = {
@@ -25,6 +34,7 @@ const pageTitles = {
   data: "数据状态",
   agents: "运行审计",
   settings: "策略参数",
+  "param-guide": "参数说明",
 };
 
 const refreshStepLabels = {
@@ -76,6 +86,88 @@ const escapeHtml = (value) =>
 
 const pick = (rows, item) => rows.find((row) => row.item === item)?.value ?? "--";
 
+async function readJsonResponse(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text || "{}");
+  } catch {
+    throw new Error("接口返回的不是 JSON，请确认已从本地服务打开页面并重启后端。");
+  }
+}
+
+function loadShortTermMemory() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(CHAT_MEMORY_KEY) || "{}");
+    return {
+      lastAsset: parsed.lastAsset || null,
+      lastIntent: parsed.lastIntent || null,
+      turns: Array.isArray(parsed.turns) ? parsed.turns.slice(-8) : [],
+    };
+  } catch {
+    return { lastAsset: null, lastIntent: null, turns: [] };
+  }
+}
+
+function saveShortTermMemory() {
+  sessionStorage.setItem(CHAT_MEMORY_KEY, JSON.stringify(state.chatMemory || { turns: [] }));
+  renderChatMemoryStatus();
+}
+
+function clearShortTermMemory() {
+  state.chatMemory = { lastAsset: null, lastIntent: null, turns: [] };
+  sessionStorage.removeItem(CHAT_MEMORY_KEY);
+  renderChatMemoryStatus();
+  appendMessage("assistant", "已清除本轮短期记忆。后续问题不会再沿用刚才的标的或上下文。", "AI");
+}
+
+function renderChatMemoryStatus() {
+  const target = document.getElementById("chat-memory-status");
+  if (!target) return;
+  const asset = state.chatMemory?.lastAsset;
+  const turns = state.chatMemory?.turns?.length || 0;
+  target.textContent = asset?.name
+    ? `短期记忆：${asset.name}${asset.code ? ` ${asset.code}` : ""} · ${turns}轮`
+    : `短期记忆：${turns ? `${turns}轮` : "空"}`;
+}
+
+function rememberChatTurn(question, result, answer) {
+  const intent = result?.intent || {};
+  const entities = intent.entities || {};
+  const mentionedAsset = findMentionedAsset(question);
+  const lastAsset = entities.code || entities.name
+    ? {
+        code: entities.code || mentionedAsset?.code || "",
+        name: entities.name || mentionedAsset?.name || "",
+        asset_type: entities.asset_type || mentionedAsset?.asset_type || "",
+      }
+    : mentionedAsset || state.chatMemory?.lastAsset || null;
+  const turn = {
+    question: String(question || "").slice(0, 220),
+    answer: String(answer || "").slice(0, 260),
+    intent: intent.name || "local",
+    asset: lastAsset,
+    at: new Date().toISOString(),
+  };
+  state.chatMemory = {
+    lastAsset,
+    lastIntent: intent.name || state.chatMemory?.lastIntent || null,
+    turns: [...(state.chatMemory?.turns || []), turn].slice(-8),
+  };
+  saveShortTermMemory();
+}
+
+function findMentionedAsset(text) {
+  const query = String(text || "").toLowerCase();
+  if (!query || !Array.isArray(state.assets)) return null;
+  return state.assets.find((asset) => {
+    const code = String(asset.code || "").toLowerCase();
+    const rawCode = code.replace(".sh", "").replace(".sz", "");
+    const name = String(asset.name || "").toLowerCase();
+    const shortName = name.replace("etf", "").replace("转债", "");
+    return (code && query.includes(code)) || (rawCode && query.includes(rawCode)) || (name && query.includes(name)) || (shortName && query.includes(shortName));
+  }) || null;
+}
+
 async function loadDashboard() {
   const status = document.getElementById("data-status");
   try {
@@ -89,12 +181,101 @@ async function loadDashboard() {
     loadDbStatus();
     loadAssets();
     loadStrategyParams();
+    loadModelConfig();
   } catch (error) {
     status.textContent = "数据不可用";
     status.classList.remove("ok");
     status.classList.add("warn");
     document.getElementById("research-summary").textContent =
       "无法读取 /outputs/latest/dashboard.json。请先运行后端工作流，或从项目根目录启动本地服务。";
+    loadStrategyParams();
+    loadModelConfig();
+  }
+}
+
+async function loadModelConfig() {
+  try {
+    const response = await fetch(`/api/model-config?ts=${Date.now()}`, { cache: "no-store" });
+    const result = await readJsonResponse(response);
+    if (!response.ok || result.status !== "success") throw new Error(result.message || `HTTP ${response.status}`);
+    state.modelConfig = result.config || {};
+    renderModelConfig();
+    renderAiChatButton();
+    if (state.data) render();
+    loadOpenAiModels();
+  } catch (error) {
+    const status = document.getElementById("model-config-status");
+    if (status) status.textContent = `模型配置读取失败：${error.message}`;
+  }
+}
+
+async function loadOpenAiModels() {
+  const status = document.getElementById("model-list-status");
+  if (status) status.textContent = "正在读取 OpenAI 模型列表。";
+  try {
+    const response = await fetch(`/api/openai-models?ts=${Date.now()}`, { cache: "no-store" });
+    const result = await readJsonResponse(response);
+    if (!response.ok || result.status !== "success") throw new Error(result.message || `HTTP ${response.status}`);
+    state.openaiModels = result.models || [];
+    state.openaiModelSource = result.source || "";
+    state.openaiModelMessage = result.message || "";
+    renderModelConfig();
+  } catch (error) {
+    state.openaiModelMessage = `模型列表读取失败：${error.message}`;
+    if (status) status.textContent = state.openaiModelMessage;
+  }
+}
+
+async function saveModelConfig() {
+  if (!state.modelConfig) return;
+  const status = document.getElementById("model-config-status");
+  try {
+    syncModelConfigFromForm();
+    const response = await fetch("/api/model-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config: state.modelConfig }),
+    });
+    const result = await readJsonResponse(response);
+    if (!response.ok || result.status !== "success") throw new Error(result.message || `HTTP ${response.status}`);
+    state.modelConfig = result.config;
+    state.isEditingOpenAiKey = false;
+    if (status) status.textContent = "AI 模型配置已保存。下一次 AI 智能问答生效。";
+    renderModelConfig();
+    if (state.data) render();
+    loadOpenAiModels();
+  } catch (error) {
+    if (status) status.textContent = `保存失败：${error.message}`;
+  }
+}
+
+async function verifyOpenAiConnection() {
+  if (!state.modelConfig) return;
+  const status = document.getElementById("model-config-status");
+  const apiKey = (document.getElementById("openai-api-key")?.value || "").trim();
+  if (status) status.textContent = "正在验证 OpenAI 连通性。";
+  try {
+    const response = await fetch("/api/model-config/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey }),
+    });
+    const result = await readJsonResponse(response);
+    if (!response.ok || result.status !== "success") throw new Error(result.message || `HTTP ${response.status}`);
+    state.openaiConnection = result.connected ? "ok" : "warn";
+    state.openaiModelMessage = result.message || "";
+    if (Array.isArray(result.models) && result.models.length) state.openaiModels = result.models;
+    if (result.api_key_masked) {
+      state.modelConfig.api_key_configured = true;
+      state.modelConfig.api_key_masked = result.api_key_masked;
+    }
+    renderModelConfig();
+    if (state.data) render();
+  } catch (error) {
+    state.openaiConnection = "warn";
+    state.openaiModelMessage = `验证失败：${error.message}`;
+    renderModelConfig();
+    if (state.data) render();
   }
 }
 
@@ -420,6 +601,86 @@ function renderStrategyParams() {
       </section>
     `)
     .join("");
+}
+
+function renderModelConfig() {
+  const config = state.modelConfig || {};
+  const form = document.getElementById("model-config-form");
+  const status = document.getElementById("model-config-status");
+  if (!form) return;
+  const chat = config.chat || {};
+  const chatModel = chat.primary_model || config.primary_model || "";
+  const candidates = Array.from(new Set([
+    ...(state.openaiModels || []),
+    config.primary_model,
+    config.economy_model,
+    chat.primary_model,
+    "gpt-5.5",
+    "gpt-5.4-mini",
+  ].filter(Boolean)));
+  const selectedKnownModel = candidates.includes(chatModel) ? chatModel : "__custom__";
+  const customValue = selectedKnownModel === "__custom__" ? chatModel : "";
+  const keyLine = config.api_key_configured
+    ? `Key 已配置：${config.api_key_masked || "已遮挡"}`
+    : "Key 未配置";
+  if (status) status.textContent = `当前 AI 智能问答：OpenAI · ${chatModel || "--"} · ${keyLine}`;
+  const keyStatusClass = state.openaiConnection === "ok" ? "is-ok" : state.openaiConnection === "warn" ? "is-warn" : "";
+  const keyStatusText = state.openaiConnection === "ok"
+    ? "连通正常"
+    : state.openaiConnection === "warn"
+      ? "未连通"
+      : config.api_key_configured
+        ? "已配置"
+        : "未配置";
+  const keyDisabled = state.isEditingOpenAiKey ? "" : "disabled";
+  form.innerHTML = `
+    <div class="model-config-grid">
+      <div class="param-field">
+        <label>OpenAI 模型</label>
+        <select id="chat-model-select">
+          ${candidates.map((model) => `<option value="${escapeHtml(model)}" ${selectedKnownModel === model ? "selected" : ""}>${escapeHtml(model)}</option>`).join("")}
+          <option value="__custom__" ${selectedKnownModel === "__custom__" ? "selected" : ""}>自定义模型名</option>
+        </select>
+        <small>下次 AI 智能问答调用时生效。</small>
+      </div>
+      <div class="param-field">
+        <label>自定义模型名</label>
+        <input id="chat-model-custom" type="text" value="${escapeHtml(customValue)}" placeholder="例如 gpt-5.5" />
+        <small>选择“自定义模型名”时使用。</small>
+      </div>
+      <div class="param-field span-2">
+        <label>OpenAI Key <span class="key-health ${keyStatusClass}">${escapeHtml(keyStatusText)}</span></label>
+        <div class="key-control-row">
+          <input id="openai-api-key" type="password" autocomplete="off" value="" placeholder="${escapeHtml(config.api_key_masked || "sk-...")}" ${keyDisabled} />
+          <button id="edit-openai-key" class="button" type="button">${state.isEditingOpenAiKey ? "取消修改" : "修改 Key"}</button>
+          <button id="verify-openai-key" class="button" type="button">验证连通</button>
+        </div>
+        <small>${state.isEditingOpenAiKey ? "请输入新的 OpenAI key；保存后会替换当前 key。" : "默认使用当前已配置 key。需要更换时点击“修改 Key”。"}</small>
+      </div>
+      <p id="model-list-status" class="plain-text span-2">${escapeHtml(state.openaiModelMessage || "模型列表会按当前 key 自动读取。")}</p>
+    </div>
+  `;
+}
+
+function syncModelConfigFromForm() {
+  const config = state.modelConfig || {};
+  const selectedModel = document.getElementById("chat-model-select")?.value || "";
+  const customModel = (document.getElementById("chat-model-custom")?.value || "").trim();
+  const model = selectedModel === "__custom__" ? customModel : selectedModel;
+  const apiKey = (document.getElementById("openai-api-key")?.value || "").trim();
+  config.provider = config.provider || "openai";
+  config.primary_model = config.primary_model || model || "gpt-5.5";
+  config.api_key_env = config.api_key_env || "OPENAI_API_KEY";
+  delete config.api_key_configured;
+  delete config.api_key_masked;
+  if (apiKey) config.api_key = apiKey;
+  config.chat = {
+    ...(config.chat || {}),
+    provider: "openai",
+    primary_model: model || config.primary_model || "gpt-5.5",
+    llm_enabled: true,
+  };
+  state.modelConfig = config;
 }
 
 function renderParamField(path, label, type) {
@@ -773,6 +1034,8 @@ function render() {
 function renderContext(summary) {
   const data = state.data;
   const items = [
+    ["AI模式", state.aiChatEnabled ? "已开启" : "未开启"],
+    ["当前模型", chatModelStatus()],
     ["报告日期", data.reportDate || "--"],
     ["ETF建仓", pick(summary, "ETF建仓候选数量")],
     ["ETF关注", pick(summary, "ETF关注池数量")],
@@ -781,7 +1044,6 @@ function renderContext(summary) {
     ["转债Top10", pick(summary, "可转债Top10数量")],
     ["已识别风险", pickSummary(summary, "系统已识别风险项", "数据校验异常项")],
     ["日报解释", dailyReportMode(summary)],
-    ["聊天模型", chatModelStatus()],
   ];
   document.getElementById("context-grid").innerHTML = items
     .map((item) => `<div class="context-item"><span>${escapeHtml(item[0])}</span><strong>${escapeHtml(item[1])}</strong></div>`)
@@ -1035,14 +1297,30 @@ function dailyReportMode(summary) {
 
 function chatModelStatus() {
   if (!state.aiChatEnabled) return "规则模式";
+  const config = state.modelConfig || {};
+  const chat = config.chat || {};
+  const provider = chat.provider || config.provider || "openai";
+  const providerLabel = provider === "openai" ? "OpenAI" : provider;
+  const model = chat.primary_model || config.primary_model || "";
+  const keyStatus = config.api_key_configured ? "Key已配置" : "Key未配置";
+  const connection = state.openaiConnection === "ok" ? "连通正常" : keyStatus;
+  if (model) return `${providerLabel} · ${model} · ${connection}`;
   const latest = state.dbStatus?.chatModel?.latest;
   const fallbackModel = state.data?.llmUsage?.llm_model || pick(state.data?.summary || [], "日报解释模型") || pick(state.data?.summary || [], "LLM模型");
   if (latest?.llm_used) return `已连接 ${latest.llm_model || fallbackModel || ""}`.trim();
   return fallbackModel && fallbackModel !== "--" ? `已配置 ${fallbackModel}` : "待验证";
 }
 
-function toggleAiChatMode() {
+function renderAiChatButton() {
   const button = document.getElementById("ai-chat-toggle");
+  if (!button) return;
+  const modelName = (state.modelConfig?.chat || {}).primary_model || state.modelConfig?.primary_model || "";
+  button.classList.toggle("is-on", state.aiChatEnabled);
+  button.textContent = state.aiChatEnabled ? "AI 已开启" : "AI 智能问答";
+  button.title = state.aiChatEnabled && modelName ? `当前模型：${modelName}` : "";
+}
+
+function toggleAiChatMode() {
   if (!state.aiChatEnabled) {
     const ok = window.confirm("开启 AI 智能问答后，系统才会调用大模型解释本地证据。交易信号、排名和风险分层仍以规则代码为准。确认开启？");
     if (!ok) return;
@@ -1050,10 +1328,7 @@ function toggleAiChatMode() {
   } else {
     state.aiChatEnabled = false;
   }
-  if (button) {
-    button.classList.toggle("is-on", state.aiChatEnabled);
-    button.textContent = state.aiChatEnabled ? "AI 已开启" : "AI 智能问答";
-  }
+  renderAiChatButton();
   render();
 }
 
@@ -1214,32 +1489,57 @@ async function submitChat(question) {
   });
 
   try {
-    const localResult = localDeterministicChat(question);
-    if (localResult) {
-      liveStream.finish(localResult);
-      await streamAnswer(thinking, localResult.answer);
-      thinking.querySelector(".message-body span").textContent = `Trace ${localResult.traceId} · ${localResult.intent.name} · ${localResult.llmModel}`;
-      attachAnalysisDetails(thinking, localResult, question);
-      renderAgentRuntime(localResult);
-      return;
-    }
-
     if (!state.aiChatEnabled) {
+      const localResult = localDeterministicChat(question);
+      if (localResult) {
+        liveStream.finish(localResult);
+        await streamAnswer(thinking, localResult.answer);
+        thinking.querySelector(".message-body span").textContent = `Trace ${localResult.traceId} · ${localResult.intent.name} · ${localResult.llmModel}`;
+        attachAnalysisDetails(thinking, localResult, question);
+        renderAgentRuntime(localResult);
+        rememberChatTurn(question, localResult, localResult.answer);
+        return;
+      }
+
       const ruleResult = localChatResult(localAnswer(question), "rule_based_chat", "ai_chat_not_enabled", "Local rule answer", "frontend.dashboard.summary");
       liveStream.finish(ruleResult);
       await streamAnswer(thinking, ruleResult.answer);
       thinking.querySelector(".message-body span").textContent = "规则问答模式 · 未启用 AI 智能问答";
       attachAnalysisDetails(thinking, ruleResult, question);
       renderAgentRuntime(ruleResult);
+      rememberChatTurn(question, ruleResult, ruleResult.answer);
+      return;
+    }
+
+    if (window.location.protocol === "file:") {
+      const answer = [
+        "现在这个页面是直接用 file:// 打开的，所以不能调用后端的 /api/chat，也就不会真正进入 AI 模型。",
+        "",
+        "请先双击“启动AI投研.command”，然后从 http://127.0.0.1:8766/frontend/#chat 打开投研问答。这样 AI 智能问答才会读取本地数据库和 dashboard 证据包，再调用大模型组织回答。",
+        "",
+        "当前我不会把本地规则模板伪装成 AI 回答。"
+      ].join("\n");
+      const fileResult = localChatResult(answer, "ai_backend_unavailable", "file_protocol", "AI backend unavailable", "frontend.runtime");
+      liveStream.finish(fileResult);
+      await streamAnswer(thinking, fileResult.answer);
+      thinking.querySelector(".message-body span").textContent = "AI 后端未连接 · 当前是 file:// 页面";
+      attachAnalysisDetails(thinking, fileResult, question);
+      renderAgentRuntime(fileResult);
+      rememberChatTurn(question, fileResult, fileResult.answer);
       return;
     }
 
     const controller = new AbortController();
-    timeoutId = window.setTimeout(() => controller.abort(), 20000);
+    timeoutId = window.setTimeout(() => controller.abort(), 90000);
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, sessionId: "local-dashboard", userId: "local-user" }),
+      body: JSON.stringify({
+        question,
+        sessionId: "local-dashboard",
+        userId: "local-user",
+        shortTermMemory: state.chatMemory || {},
+      }),
       signal: controller.signal,
     });
     window.clearTimeout(timeoutId);
@@ -1254,8 +1554,9 @@ async function submitChat(question) {
       `Trace ${result.traceId} · ${result.intent?.name || "agent"} · ${result.llmModel || (result.llmUsed ? "llm" : "deterministic")}`;
     attachAnalysisDetails(thinking, result, question);
     renderAgentRuntime(result);
+    rememberChatTurn(question, result, result.answer);
   } catch (error) {
-    const message = error.name === "AbortError" ? "请求超过 20 秒，已使用本地确定性摘要回答" : error.message;
+    const message = error.name === "AbortError" ? "请求超过 90 秒，已使用本地确定性摘要回答" : error.message;
     liveStream.error(message);
     await streamAnswer(thinking, localAnswer(question));
     thinking.querySelector(".message-body span").textContent = `来源：本地 dashboard 摘要 · ${message}`;
@@ -1270,6 +1571,7 @@ async function submitChat(question) {
     };
     attachAnalysisDetails(thinking, fallbackResult, question);
     renderAgentRuntime(fallbackResult);
+    rememberChatTurn(question, fallbackResult, thinking.querySelector(".message-body > p")?.textContent || "");
   } finally {
     if (timeoutId) window.clearTimeout(timeoutId);
     state.isChatting = false;
@@ -1319,8 +1621,8 @@ function createThinkingStream(article, question) {
     ["接收问题", "已接收用户问题，准备进入受控投研链路。"],
     ["识别意图", "判断是参数、ETF、TL、可转债、数据质量还是日报问题。"],
     ["读取证据", "读取本地 dashboard、SQLite、策略参数和规则说明。"],
-    ["规则核对", "按客户规则核对字段，不新增交易信号。"],
-    ["生成回答", "组织成客户可读结论和证据说明。"],
+    ["规则核对", "按系统规则核对字段，不新增交易信号。"],
+    ["生成回答", "组织成用户可读结论和证据说明。"],
     ["输出校验", "检查是否误写买入、建仓、平仓或收益承诺。"],
   ];
   if (!body) {
@@ -1455,7 +1757,7 @@ function initialAnalysisResult() {
     steps: [
       { name: "ChatRouterAgent", status: "running", detail: "正在识别问题类型和可用数据权限。" },
       { name: "ResearchToolbox", status: "queued", detail: "准备读取日报、数据库、策略规则和相关信号。" },
-      { name: "RuleCheck", status: "queued", detail: "将按客户规则核对 ETF、TL、可转债字段，不新增规则外判断。" },
+      { name: "RuleCheck", status: "queued", detail: "将按系统规则核对 ETF、TL、可转债字段，不新增规则外判断。" },
       { name: "OutputGuardrail", status: "queued", detail: "等待最终回答后检查是否误写交易信号或收益承诺。" },
     ],
     evidence: [
@@ -1503,7 +1805,7 @@ function attachAnalysisDetails(article, result, question = "") {
     </summary>
     ${
       complex
-        ? `<p class="analysis-lede">这是可审计分析过程：展示系统如何分类问题、读取证据、套用客户规则和做输出校验，不展示模型隐藏思考。</p>`
+        ? `<p class="analysis-lede">这是可审计分析过程：展示系统如何分类问题、读取证据、套用系统规则和做输出校验，不展示模型隐藏思考。</p>`
         : ""
     }
     <div class="analysis-grid">
@@ -1813,7 +2115,24 @@ function setActiveView() {
 document.getElementById("refresh-data").addEventListener("click", refreshData);
 document.getElementById("export-pdf").addEventListener("click", exportPdf);
 document.getElementById("ai-chat-toggle")?.addEventListener("click", toggleAiChatMode);
+document.getElementById("clear-chat-memory")?.addEventListener("click", clearShortTermMemory);
 document.getElementById("save-params")?.addEventListener("click", saveStrategyParams);
+document.getElementById("save-model-config")?.addEventListener("click", saveModelConfig);
+document.getElementById("refresh-openai-models")?.addEventListener("click", loadOpenAiModels);
+document.getElementById("model-config-form")?.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (target.id === "edit-openai-key") {
+    event.preventDefault();
+    state.isEditingOpenAiKey = !state.isEditingOpenAiKey;
+    renderModelConfig();
+    if (state.isEditingOpenAiKey) document.getElementById("openai-api-key")?.focus();
+  }
+  if (target.id === "verify-openai-key") {
+    event.preventDefault();
+    verifyOpenAiConnection();
+  }
+});
 document.getElementById("asset-search")?.addEventListener("input", renderAssets);
 document.getElementById("chat-form").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -1830,4 +2149,5 @@ document.querySelectorAll("[data-question]").forEach((button) => {
 window.addEventListener("hashchange", setActiveView);
 
 setActiveView();
+renderChatMemoryStatus();
 loadDashboard();

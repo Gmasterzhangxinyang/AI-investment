@@ -70,4 +70,4 @@ Weekly signals are calculated causally as of each report date. For a Wednesday r
 
 ## LLM boundary
 
-When enabled and explicitly used, the configured OpenAI model can write explanations from existing evidence. It cannot change signal tables, scores, historical diagnostics, or risk flags.
+When enabled and explicitly used, the configured LLM provider can write explanations from existing evidence. It cannot change signal tables, scores, historical diagnostics, or risk flags.

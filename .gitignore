@@ -44,7 +44,7 @@ data/db_backups/
 *.sqlite3
 *.db
 
-# Source Excel snapshots and archives contain customer data.
+# Source Excel snapshots and archives contain local/private data.
 data/archive/
 data/current/
 data/wind/current/*

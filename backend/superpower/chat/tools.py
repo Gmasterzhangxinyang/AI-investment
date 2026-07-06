@@ -20,7 +20,12 @@ class ResearchToolbox:
         self.repository = repository
 
     def collect(self, intent: ChatIntent) -> list[ToolResult]:
-        tools: list[ToolResult] = [self.get_daily_summary(), self.get_rule_contract()]
+        tools: list[ToolResult] = [
+            self.get_daily_summary(),
+            self.get_rule_contract(),
+            self.get_data_map(),
+            self.get_research_snapshot(),
+        ]
         if intent.name in {"database_inventory", "asset_list"}:
             tools.append(self.get_database_inventory())
             return tools
@@ -41,6 +46,132 @@ class ResearchToolbox:
         if intent.name == "risk_review":
             tools.append(self.get_risk_summary())
         return tools
+
+    def get_data_map(self) -> ToolResult:
+        """Compact map of available local data so the LLM can reason about coverage."""
+        run_info = self.dashboard.get("run_info") or {}
+        report_date = self.dashboard.get("reportDate") or run_info.get("trade_date") or "--"
+        status = self.dashboard.get("data_quality", {}).get("overall_status") or run_info.get("status") or "--"
+        cb = self.dashboard.get("convertible_bond") or {}
+        etf = self.dashboard.get("etf") or {}
+        table_counts: dict[str, Any] = {}
+        latest_run: dict[str, Any] | None = None
+        asset_counts: dict[str, int] = {}
+        if self.repository is not None:
+            db_status = self.repository.status()
+            table_counts = db_status.get("tableCounts") or {}
+            latest_run = db_status.get("latestRun") or {}
+            assets = self.repository.list_assets()
+            asset_counts = {
+                "ETF": len([item for item in assets if item.get("asset_type") == "ETF"]),
+                "TL": len([item for item in assets if item.get("asset_type") == "TL"]),
+                "CONVERTIBLE": len([item for item in assets if item.get("asset_type") == "CONVERTIBLE"]),
+            }
+        modules = {
+            "daily_report": bool(self.dashboard.get("summary")),
+            "etf": {
+                "status": etf.get("status") or "ok",
+                "buy_candidates": len(self.dashboard.get("etfBuyCandidates", [])),
+                "watchlist": len(self.dashboard.get("etfWatchlist", [])),
+                "sell_alerts": len(self.dashboard.get("etfSellAlerts", [])),
+                "all_signals": len((etf.get("all_signals") or self.dashboard.get("etfAllSignals") or [])),
+            },
+            "tl": {
+                "today_rows": len(self.dashboard.get("tlToday", [])),
+                "recent_rows": len(self.dashboard.get("tlRecent", [])),
+            },
+            "convertible_bond": {
+                "status": cb.get("status") or "ok",
+                "qualified": len(cb.get("qualified") or []),
+                "weak_watch": len(cb.get("weak_watch") or []),
+                "risk_watch": len(cb.get("risk_watch") or []),
+                "excluded": len(cb.get("excluded") or self.dashboard.get("cbExcluded") or []),
+                "top10": len(cb.get("top10") or self.dashboard.get("cbTop10") or []),
+                "quality_message": (cb.get("summary") or {}).get("quality_message") or "",
+            },
+        }
+        return ToolResult(
+            tool="get_data_map",
+            title="Local data map",
+            source="dashboard.run_info + dashboard modules + sqlite status",
+            summary=f"本地数据地图：报告日期 {report_date}，数据状态 {status}，SQLite 表计数 {len(table_counts)} 项。",
+            data={
+                "report_date": report_date,
+                "run_status": run_info.get("status") or "--",
+                "data_quality_status": status,
+                "modules": modules,
+                "asset_counts": asset_counts,
+                "sqlite_table_counts": table_counts,
+                "latest_run": latest_run,
+                "data_boundary": [
+                    "只能回答 dashboard、SQLite、策略参数和本地 Excel 入库后的数据。",
+                    "如果某标的或某日期没有入库，必须明确说没有数据。",
+                    "可以解释规则、指出缺口、给出人工复核清单，但不能新增交易信号。",
+                ],
+            },
+        )
+
+    def get_research_snapshot(self) -> ToolResult:
+        """A compact research worksheet for professional Q&A."""
+        etf = self.dashboard.get("etf") or {}
+        cb = self.dashboard.get("convertible_bond") or {}
+        etf_rows = etf.get("all_signals") or self.dashboard.get("etfAllSignals") or []
+        etf_sorted = sorted(etf_rows, key=lambda row: self._safe_float(row.get("score")), reverse=True)
+        etf_weak = sorted(etf_rows, key=lambda row: self._safe_float(row.get("score")))
+        cb_ranked = cb.get("ranked_candidates") or cb.get("candidates") or self.dashboard.get("cbRanked") or []
+        cb_excluded = cb.get("excluded") or self.dashboard.get("cbExcluded") or []
+        tl_today = self.dashboard.get("tlToday", [])
+        risk_rows = self.dashboard.get("riskSummary", [])
+        quality_rows = self.dashboard.get("dataQuality", [])
+        warnings = [
+            row
+            for row in quality_rows
+            if str(row.get("status", "")).upper() not in {"OK", "INFO", "SUCCESS", "PASS"}
+        ][:8]
+        top_etf = [self._compact_etf_row(row) for row in etf_sorted[:8]]
+        weak_etf = [self._compact_etf_row(row) for row in etf_weak[:5]]
+        cb_watch = [self._compact_cb_row(row) for row in (cb.get("weak_watch") or [])[:8]]
+        cb_risk = [self._compact_cb_row(row) for row in (cb.get("risk_watch") or cb_ranked)[:8]]
+        cb_excluded_sample = [self._compact_cb_row(row) for row in cb_excluded[:8]]
+        tl_row = tl_today[0] if tl_today else {}
+        summary = (
+            f"研究快照：ETF全量 {len(etf_rows)} 只，"
+            f"可转债合格 {len(cb.get('qualified') or [])} 只、弱观察 {len(cb.get('weak_watch') or [])} 只、"
+            f"风险观察 {len(cb.get('risk_watch') or [])} 只，TL状态 {tl_row.get('display_status') or tl_row.get('state') or '--'}。"
+        )
+        return ToolResult(
+            tool="get_research_snapshot",
+            title="Professional research snapshot",
+            source="dashboard.etf.all_signals + dashboard.tlToday + dashboard.convertible_bond + dashboard.riskSummary",
+            summary=summary,
+            data={
+                "research_lens": [
+                    "ETF：高分只代表相对强弱，必须再看是否触发建仓/平仓规则。",
+                    "TL：先看周线硬约束，再看日线改善；没有低位反弹条件就不能升级。",
+                    "可转债：先看候选资格分层，再看评分；高风险分层不进入 Top 候选。",
+                    "风险：数据质量 WARN 和风控提示会降低结论置信度。",
+                ],
+                "etf_strength_leaders": top_etf,
+                "etf_weak_tail": weak_etf,
+                "tl_state": {
+                    "display_status": tl_row.get("display_status") or tl_row.get("state"),
+                    "reason": tl_row.get("reason"),
+                    "weekly_macd_reason": tl_row.get("weekly_macd_reason"),
+                    "weekly_kdj_threshold_check": tl_row.get("weekly_kdj_threshold_check"),
+                    "daily_macd_reason": tl_row.get("daily_macd_reason"),
+                    "daily_kdj_threshold_check": tl_row.get("daily_kdj_threshold_check"),
+                },
+                "convertible_bond_quality": {
+                    "summary": cb.get("summary") or {},
+                    "qualified": [self._compact_cb_row(row) for row in (cb.get("qualified") or [])[:8]],
+                    "weak_watch": cb_watch,
+                    "risk_watch": cb_risk,
+                    "excluded_sample": cb_excluded_sample,
+                },
+                "risk_summary": risk_rows[:8],
+                "data_quality_warnings": warnings,
+            },
+        )
 
     def get_rule_contract(self) -> ToolResult:
         params = self._load_strategy_params()
@@ -303,6 +434,47 @@ class ResearchToolbox:
             summary=f"风控摘要 {len(rows)} 项。",
             data=rows[:20],
         )
+
+    def _compact_etf_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "name": row.get("name"),
+            "code": row.get("code"),
+            "position_status": row.get("position_status"),
+            "display_action": row.get("display_action") or row.get("action"),
+            "score": row.get("score"),
+            "close": row.get("close"),
+            "ma5": row.get("ma5"),
+            "ma10": row.get("ma10"),
+            "ma20": row.get("ma20"),
+            "volume_ratio_60": row.get("vol_ratio60") or row.get("volume_ratio_60"),
+            "macd_hist": row.get("macd_hist"),
+            "reason": row.get("signal_reason") or row.get("reason") or row.get("missing_condition"),
+        }
+
+    def _compact_cb_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "name": row.get("name") or row.get("bond_name"),
+            "code": row.get("code") or row.get("bond_code"),
+            "qualification": row.get("qualification"),
+            "eligible_for_top": row.get("eligible_for_top"),
+            "score": row.get("score"),
+            "score_grade": row.get("score_grade"),
+            "price": row.get("price"),
+            "premium_rate": row.get("premium_rate") or row.get("conversion_premium_rate"),
+            "ytm": row.get("ytm"),
+            "remaining_size": row.get("remaining_size"),
+            "risk_level": row.get("risk_level"),
+            "reason": row.get("not_top_reason") or row.get("excluded_reason") or row.get("reason") or row.get("rank_reason"),
+            "quality_notes": row.get("quality_notes") or row.get("risk_notes"),
+        }
+
+    def _safe_float(self, value: Any) -> float:
+        try:
+            if value is None or value == "":
+                return float("-inf")
+            return float(value)
+        except (TypeError, ValueError):
+            return float("-inf")
 
     def _filter_rows(self, rows: list[dict[str, Any]], entities: dict[str, str]) -> list[dict[str, Any]]:
         code = entities.get("code")

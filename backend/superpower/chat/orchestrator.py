@@ -68,7 +68,9 @@ class ChatOrchestrator:
 
         dashboard = self._load_dashboard()
         repository = DatabaseRepository(self.root_dir)
-        intent = self.router.route(request.question, dashboard)
+        routing_question = self._question_with_short_term_memory(request.question, request.short_term_memory)
+        intent = self.router.route(routing_question, dashboard)
+        intent = self._enrich_intent_with_short_term_memory(request.question, intent, request.short_term_memory)
         intent = self._enrich_intent_with_database_entities(request.question, intent, repository)
         trace = ChatTrace.start(request, intent)
         trace.steps.append(AgentStep("ChatRouterAgent", "success", f"识别为 {intent.name}，置信度 {intent.confidence:.2f}。"))
@@ -83,36 +85,8 @@ class ChatOrchestrator:
             intent=intent,
             rulebook=rules_for_intent(intent.name),
             tools=tools,
+            memory_context=self._memory_context_for_prompt(request.short_term_memory),
         )
-
-        deterministic_answer = self._deterministic_evidence_answer(request.question, evidence_pack)
-        if deterministic_answer:
-            trace.llm_used = False
-            trace.llm_model = "deterministic_chat"
-            trace.llm_reason = "simple_factual_answer"
-            trace.steps.append(AgentStep("DeterministicAnswerAgent", "success", "使用本地确定性证据直接回答。"))
-            output_guard = self.guardrails.validate_output(deterministic_answer, intent, tools)
-            trace.guardrail = output_guard
-            trace.steps.append(
-                AgentStep(
-                    "OutputGuardrail",
-                    "success" if output_guard.passed else "repaired",
-                    "输出已通过规则校验。" if output_guard.passed else "输出触发限制，已替换为保守口径。",
-                )
-            )
-            self.trace_store.save(trace)
-            return ChatResponse(
-                answer=output_guard.text,
-                intent=intent,
-                steps=trace.steps,
-                evidence=tools,
-                guardrail=output_guard,
-                trace_id=trace.run_id,
-                llm_used=False,
-                llm_provider="local",
-                llm_model="deterministic_chat",
-                llm_reason="simple_factual_answer",
-            )
 
         prompt = self._build_prompt(request.question, evidence_pack)
         model_config = self._load_model_config()
@@ -162,47 +136,148 @@ class ChatOrchestrator:
         path = self.root_dir / "configs" / "model_config.json"
         if not path.exists():
             return {"provider": "openai", "primary_model": "gpt-5.5", "llm_enabled": False}
-        return json.loads(path.read_text(encoding="utf-8"))
+        config = json.loads(path.read_text(encoding="utf-8"))
+        return self._chat_model_config(config)
+
+    def _chat_model_config(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Apply chat-only LLM overrides without changing daily report LLM config."""
+        chat_config = config.get("chat") if isinstance(config.get("chat"), dict) else {}
+        if not chat_config:
+            return config
+        merged = dict(config)
+        for key, value in chat_config.items():
+            if key == "opencode" and isinstance(value, dict):
+                base_opencode = merged.get("opencode") if isinstance(merged.get("opencode"), dict) else {}
+                merged["opencode"] = {**base_opencode, **value}
+            else:
+                merged[key] = value
+        return merged
 
     def _developer_prompt(self) -> str:
         return (
-            "你是机构投研系统中的受控 Chat Agent。"
-            "你只能使用工具返回的证据包回答问题。"
-                "你不能新增标的、改写交易信号、承诺收益、替用户下单或生成不受规则支持的建仓候选。"
+            "你是本地 AI 投研工作台里的智能投研助理。"
+            "你的工作方式像资深研究员：先确认问题对象，再检查本地数据覆盖，再用规则证据解释状态、风险、缺口和下一步复核重点。"
+            "你有明确的金融分析思想：先看数据质量，再看趋势与动能是否同向，再看风险约束，最后才讨论动作；宁可说没有数据，也不能补猜。"
+            "你只能使用工具返回的 EvidencePack 回答问题。"
+            "你不能新增标的、改写交易信号、承诺收益、替用户下单或生成不受规则支持的建仓候选。"
             "所有买入、建仓、平仓、关注、不做交易结论必须来自 EvidencePack 中的确定性字段，不能来自你的主观判断。"
-            "如果规则字段与直觉冲突，必须服从规则字段。"
-            "回答中文，专业、克制、可审计。"
-            "禁止 Markdown、表格、分割线、项目符号。可以使用短段落和“1. 2. 3.”编号。"
+            "如果规则字段与直觉冲突，必须服从规则字段，并解释为什么规则没有触发。"
+            "回答要像真人投研交流：先给直接结论，再解释原因，再提醒风险和下一步；语气自然、清楚、专业、克制、可审计。"
+            "禁止表格、分割线、过度 Markdown。可以使用短段落和“1. 2. 3.”编号。"
         )
+
+    def _investment_framework(self) -> dict[str, Any]:
+        return {
+            "name": "rules_first_research_framework",
+            "philosophy": [
+                "先判断数据是否足够，再判断信号是否满足；缺数据时不补猜。",
+                "交易动作服从确定性规则，研究解释可以讨论缺口、风险和复核优先级。",
+                "ETF 先看持仓路径，再看 MA5/MA10、MACD、量能是否同向确认。",
+                "TL 先看周线是否硬否决，再看日线是否改善；日线不能覆盖周线风险。",
+                "可转债先做风控分层，再看评分；高分不等于合格候选，弱观察和风险观察不能写成推荐。",
+                "任何结论都要能回到 dashboard、SQLite、策略参数或数据质量记录。",
+            ],
+            "answer_style": [
+                "先回答用户最关心的结论。",
+                "解释当前证据，而不是泛泛讲市场常识。",
+                "如果问题模糊，先用现有证据回答，再给出一个最关键的追问。",
+                "如果用户问操作，改写为规则动作提示和人工复核清单，不给确定性投资建议。",
+            ],
+        }
 
     def _build_prompt(self, question: str, pack: EvidencePack) -> str:
         serializable_pack = {
             "report_date": pack.report_date,
             "intent": asdict(pack.intent),
+            "memory_context": pack.memory_context,
+            "investment_framework": self._investment_framework(),
             "rulebook": pack.rulebook,
             "tools": [asdict(tool) for tool in pack.tools],
         }
         complex_answer_instruction = (
             "如果用户问题属于复杂问题（多条件、跨资产、追问原因、要求判断是否稳定、要求解释怎么得出结论），"
-            "正文必须包含四段：结论、分析过程、关键证据、限制与下一步。"
-            "其中“分析过程”只能写可审计步骤，例如问题分类、读取哪些工具证据、按哪些客户规则核对、输出校验如何约束；"
+            "正文必须包含四段：结论、为什么、风险与缺口、下一步复核。"
+            "其中“为什么”只能写可审计步骤和证据，例如问题分类、读取哪些工具证据、按哪些规则核对、输出校验如何约束；"
             "不得输出模型隐藏思考、猜测、未证实推理或不在证据包中的市场判断。"
         )
         return (
-            "请回答用户问题。必须严格遵守 rulebook，并只引用 tools 中的数据。"
-            "回答必须按客户策略规则核对：先给结论，再列规则条件是否满足，再列字段证据。"
+            "请回答用户问题。必须严格遵守 investment_framework 和 rulebook，并只引用 tools 中的数据。"
+            "回答必须按策略规则核对：先给结论，再解释规则条件是否满足，再列关键字段证据。"
             "不得使用未在 rulebook 或 Rule contract 中出现的新交易逻辑。"
             "不得用“技术偏强、趋势不错、可能机会”替代建仓条件。"
             "凡是买入、建仓、平仓、TL状态、可转债排名，都必须以 tools 中的 signal/state/rank/score 字段为准。"
             "若证据包没有数据，请明确说缺失；若只是关注池，不得说成建仓候选。"
+            "如果 memory_context 提供了上一轮标的，用户说“它、这只、刚才那个”时可以沿用该标的，但必须说明沿用了上下文。"
             "如果用户要求列出数据库标的，必须完整列出 EvidencePack 里的 assets 名称和代码，不要只列关注池。"
             "如果用户问某只 ETF 今天表现，即使它不在建仓候选或关注池，也要使用 ETF single asset 工具里的 latest_bar 和 history 分析。"
+            "如果用户问“怎么看、怎么操作、有没有问题”，只能输出规则动作提示、风险提示和人工复核重点，不能写建议买入或保证收益。"
+            "如果证据显示没有该标的或该日期，必须明确回答没有数据，并说明需要先刷新或补充 Wind 文件。"
             f"{complex_answer_instruction}"
-            "回答末尾用一句话列出来源名称。"
+            "回答末尾用一句话列出来源名称；必要时最后加一句最关键的追问，引导用户补充持仓、日期或想看的资产。"
             "\n\n"
             f"用户问题：{question}\n\n"
             f"EvidencePack JSON：{json.dumps(serializable_pack, ensure_ascii=False)}"
         )
+
+    def _question_with_short_term_memory(self, question: str, memory: dict[str, Any]) -> str:
+        last_asset = self._last_memory_asset(memory)
+        if not last_asset or not self._question_has_reference(question):
+            return question
+        name = str(last_asset.get("name") or "")
+        code = str(last_asset.get("code") or "")
+        asset_type = str(last_asset.get("asset_type") or "")
+        suffix = " ".join(part for part in [name, code, asset_type] if part)
+        return f"{question}（上下文标的：{suffix}）" if suffix else question
+
+    def _enrich_intent_with_short_term_memory(self, question: str, intent: ChatIntent, memory: dict[str, Any]) -> ChatIntent:
+        if intent.entities.get("code") or intent.entities.get("name"):
+            return intent
+        if not self._question_has_reference(question):
+            return intent
+        last_asset = self._last_memory_asset(memory)
+        if not last_asset:
+            return intent
+        entities = dict(intent.entities)
+        for key in ("code", "name", "asset_type"):
+            if last_asset.get(key):
+                entities[key] = str(last_asset[key])
+        asset_type = str(entities.get("asset_type") or "")
+        if asset_type == "ETF":
+            intent_name = "etf_detail"
+        elif asset_type == "TL":
+            intent_name = "tl_timing"
+        elif asset_type == "CONVERTIBLE":
+            intent_name = "convertible_bond"
+        else:
+            intent_name = intent.name
+        entities["from_short_term_memory"] = "true"
+        return ChatIntent(intent_name, max(intent.confidence, 0.91), entities)
+
+    def _memory_context_for_prompt(self, memory: dict[str, Any]) -> dict[str, Any]:
+        last_asset = self._last_memory_asset(memory)
+        turns = memory.get("turns") if isinstance(memory, dict) else []
+        if not isinstance(turns, list):
+            turns = []
+        return {
+            "enabled": bool(memory),
+            "last_asset": last_asset,
+            "last_intent": memory.get("lastIntent") if isinstance(memory, dict) else None,
+            "recent_turns": turns[-4:],
+            "policy": [
+                "短期记忆只用于理解本轮对话指代，不是交易信号。",
+                "如果沿用上一轮标的，需要在回答中说明。",
+                "用户点击清除记忆后，不得继续使用历史上下文。",
+            ],
+        }
+
+    def _last_memory_asset(self, memory: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(memory, dict):
+            return {}
+        asset = memory.get("lastAsset")
+        return asset if isinstance(asset, dict) else {}
+
+    def _question_has_reference(self, question: str) -> bool:
+        return any(token in question for token in ["它", "这只", "这个", "刚才", "上面", "该标的", "该ETF", "该转债", "他"])
 
     def _fallback_answer(self, question: str, pack: EvidencePack, reason: str) -> str:
         summaries = {tool.tool: tool for tool in pack.tools}
@@ -220,7 +295,7 @@ class ChatOrchestrator:
             lines.append(
                 "分析过程（可审计版）：1. 先由 ChatRouterAgent 判断问题类型；"
                 f"2. 再读取 {tool_titles}；"
-                "3. 然后按客户 ETF/TL/可转债规则核对信号字段；"
+                "3. 然后按系统 ETF/TL/可转债规则核对信号字段；"
                 "4. 最后由 OutputGuardrail 检查是否把关注池误写成建仓、是否新增了规则外判断。"
             )
         if daily:
@@ -276,7 +351,7 @@ class ChatOrchestrator:
             return (
                 f"截至报告日期 {pack.report_date}，当前数据库里的 ETF 标的一共 {etf_total} 只。\n\n"
                 f"今天策略结果是：ETF 建仓候选 {buy_count} 只，关注池 {watch_count} 只，平仓提示 {sell_count} 只。\n\n"
-                "这里的“ETF 标的一共多少”指客户模板纳入并已入库的 ETF 数量；"
+                "这里的“ETF 标的一共多少”指本地模板纳入并已入库的 ETF 数量；"
                 "建仓候选、关注池、平仓提示是按今日规则筛选后的结果，不是一回事。"
             )
 
@@ -297,7 +372,7 @@ class ChatOrchestrator:
                 f"关注池为 {len(watchlist)} 只，平仓提示为 {len(sell_alerts)} 只。\n\n"
                 "分析过程：1. 系统先把问题归为 ETF 规则解释类问题；"
                 "2. 读取 Daily summary、ETF signals、ETF watchlist 和 Rule contract；"
-                "3. 按客户规则核对建仓A和建仓B，不用模型自行发明交易逻辑；"
+                "3. 按系统规则核对建仓A和建仓B，不用模型自行发明交易逻辑；"
                 "4. 最后检查回答是否把关注池误写成建仓候选，或把未满足条件写成建仓候选。\n\n"
                 f"关键规则：建仓A要求未持仓、MA5今日上穿MA10、MACD柱改善、量能倍数达到 {buy_volume}；"
                 f"建仓B要求未持仓、DIF上穿DEA、MA5高于MA10、收盘价高于MA20、量能倍数达到 {buy_volume}。"
@@ -626,7 +701,7 @@ class ChatOrchestrator:
             if "基本面" in question:
                 return self._param_line("可转债基本面权重", cb_weights.get("fundamental"), "用于可转债综合评分；对应扣非净利润增长、增长加速、利润为负等基本面因子。0.25 表示 25%。")
             if "最低价格" in question or "最低价" in question:
-                return self._param_line("可转债最低价格配置", cb.get("min_price"), "低于该价格默认不进入正常排序，因为客户认为 100 元以下通常可能隐含信用风险。")
+                return self._param_line("可转债最低价格配置", cb.get("min_price"), "低于该价格默认不进入正常排序，因为 100 元以下通常可能隐含信用风险。")
             if "最高价格" in question or "价格上限" in question or "最高价" in question:
                 return self._param_line("可转债最高价格上限", cb.get("price_limit"), "高于或等于该价格不进入普通低估/性价比筛选。")
             if "溢价" in question:
@@ -685,9 +760,9 @@ class ChatOrchestrator:
 
         if "tl" in text or "国债" in question or "30年" in question or "三十年" in question:
             if "日线" in question and "j" in text:
-                return self._param_line("TL 日线 J 低位阈值", tl.get("daily_j_low_threshold"), "客户规则：日线 T-3 至 T-1 内 J 小于该阈值，并且 T 日 J 值回升，才满足日线 KDJ 低位反弹条件。")
+                return self._param_line("TL 日线 J 低位阈值", tl.get("daily_j_low_threshold"), "系统规则：日线 T-3 至 T-1 内 J 小于该阈值，并且 T 日 J 值回升，才满足日线 KDJ 低位反弹条件。")
             if "周线" in question and "j" in text:
-                return self._param_line("TL 周线 J 低位阈值", tl.get("weekly_j_low_threshold"), "客户规则：周线 T-2 内 J 小于该阈值，并且 T 周 J 值回升，才满足周线 KDJ 低位反弹条件。")
+                return self._param_line("TL 周线 J 低位阈值", tl.get("weekly_j_low_threshold"), "系统规则：周线 T-2 内 J 小于该阈值，并且 T 周 J 值回升，才满足周线 KDJ 低位反弹条件。")
             if "日线" in question and "窗口" in question:
                 return self._param_line("TL 日线 KDJ 窗口", tl.get("daily_kdj_lookback"), "用于检查最近几日是否出现过 J 低位。")
             if "周线" in question and "窗口" in question:
@@ -717,9 +792,9 @@ class ChatOrchestrator:
             {"group": "ETF", "label": "ETF 量能权重", "path": "etf.score_weights.volume", "aliases": ["etf量能权重", "量能权重"], "note": "用于 ETF 排序评分，反映放量确认的重要性。"},
             {"group": "ETF", "label": "ETF 份额变化权重", "path": "etf.score_weights.share_change", "aliases": ["份额变化权重", "份额权重", "share_change"], "note": "ETF 排序辅助项；当前份额数据不足时影响较弱。"},
             {"group": "TL", "label": "TL 日线 KDJ 窗口", "path": "tl.daily_kdj_lookback", "aliases": ["日线kdj窗口", "tl日线窗口", "日线窗口"], "note": "检查最近几日是否出现过日线 J 低位。"},
-            {"group": "TL", "label": "TL 日线 J 低位阈值", "path": "tl.daily_j_low_threshold", "aliases": ["日线j阈值", "日线j低位", "tl日线j"], "note": "客户规则：日线近 N 日 J 小于该阈值后回升，才满足日线低位反弹条件。"},
+            {"group": "TL", "label": "TL 日线 J 低位阈值", "path": "tl.daily_j_low_threshold", "aliases": ["日线j阈值", "日线j低位", "tl日线j"], "note": "系统规则：日线近 N 日 J 小于该阈值后回升，才满足日线低位反弹条件。"},
             {"group": "TL", "label": "TL 周线 KDJ 窗口", "path": "tl.weekly_kdj_lookback", "aliases": ["周线kdj窗口", "tl周线窗口", "周线窗口"], "note": "检查最近几周是否出现过周线 J 低位。"},
-            {"group": "TL", "label": "TL 周线 J 低位阈值", "path": "tl.weekly_j_low_threshold", "aliases": ["周线j阈值", "周线j低位", "tl周线j"], "note": "客户规则：周线近 N 周 J 小于该阈值后回升，才满足周线低位反弹条件。"},
+            {"group": "TL", "label": "TL 周线 J 低位阈值", "path": "tl.weekly_j_low_threshold", "aliases": ["周线j阈值", "周线j低位", "tl周线j"], "note": "系统规则：周线近 N 周 J 小于该阈值后回升，才满足周线低位反弹条件。"},
             {"group": "TL", "label": "TL MACD 柱最小改善量", "path": "tl.macd_hist_min_delta", "aliases": ["macd柱最小改善", "macd改善量", "macd_hist_min_delta"], "note": "用于判断 MACD 柱是否改善；当前为 0，表示只要方向改善即可。"},
             {"group": "TL", "label": "TL 周线不做交易硬否决", "path": "tl.weekly_no_trade_hard_veto", "aliases": ["周线硬否决", "周线不做交易硬否决", "硬否决"], "note": "开启后，周线满足不做交易条件时，日线信号不能升级为建仓候选。"},
             {"group": "可转债风控", "label": "可转债最低价格", "path": "convertible_bond.min_price", "aliases": ["最低价格", "最低价", "100元以下"], "note": "低于该价格默认不进入普通排序，因为可能隐含信用风险。"},
@@ -857,7 +932,7 @@ class ChatOrchestrator:
             return ""
         return (
             "不能保证赚钱，也不能承诺收益。"
-            "这套系统的定位是把 Wind 数据、确定性策略规则、质检和AI解释串起来，帮助客户做更稳定的投研和复核。"
+            "这套系统的定位是把 Wind 数据、确定性策略规则、质检和AI解释串起来，帮助用户做更稳定的投研和复核。"
             "ETF、TL、可转债的信号必须以代码生成的 buy_signal、sell_signal、state、rank 和 score 为准，AI 只能解释证据和提示风险，不能替代投资决策。"
         )
 

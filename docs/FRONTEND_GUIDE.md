@@ -29,6 +29,7 @@ http://127.0.0.1:8766/frontend/
 - 数据状态
 - 运行审计
 - 策略参数
+- 参数说明
 
 ## Data Source
 
@@ -47,6 +48,7 @@ It also uses local API endpoints for refresh jobs, PDF export, chat, asset detai
 - `Open Report`: links to the generated Excel workbook.
 - `Save Strategy Params`: writes `configs/strategy_params.json`; users must refresh data before new parameters affect reports.
 - `AI 智能问答`: chat starts in deterministic rule mode. The frontend asks for confirmation before enabling LLM calls; signals and rankings still come from backend rules.
+- `AI 模型`: reads and writes `configs/model_config.json`; users can view the masked OpenAI key, click to edit it, verify connectivity, refresh available OpenAI models, and choose the chat model. This only affects future AI chat calls.
 
 ## Missing Excel Behavior
 

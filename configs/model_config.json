@@ -4,6 +4,37 @@
   "economy_model": "gpt-5.4-mini",
   "llm_enabled": true,
   "daily_report_llm_enabled": false,
+  "api_key_env": "OPENAI_API_KEY",
+  "chat": {
+    "provider": "openai",
+    "primary_model": "gpt-5-codex",
+    "llm_enabled": true,
+    "opencode": {
+      "base_url": "http://127.0.0.1:4096",
+      "provider_id": "openai",
+      "model_id": "gpt-5.5",
+      "agent": "",
+      "server_username": "opencode",
+      "server_password_env": "OPENCODE_SERVER_PASSWORD"
+    }
+  },
+  "opencode": {
+    "base_url": "http://127.0.0.1:4096",
+    "provider_id": "openai",
+    "model_id": "gpt-5.5",
+    "agent": "",
+    "server_username": "opencode",
+    "server_password_env": "OPENCODE_SERVER_PASSWORD",
+    "tools": {
+      "bash": false,
+      "edit": false,
+      "write": false,
+      "apply_patch": false,
+      "shell": false,
+      "webfetch": false,
+      "websearch": false
+    }
+  },
   "usage_policy": {
     "signals": "deterministic_code_only",
     "explanations": "llm_optional",

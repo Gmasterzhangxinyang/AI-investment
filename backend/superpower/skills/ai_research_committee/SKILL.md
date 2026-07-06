@@ -17,5 +17,5 @@ outputs:
 ---
 
 The committee can critique, explain, and flag review items, but cannot mutate
-signals, scores, risk flags, or source data. When the OpenAI API key is missing,
-it emits deterministic fallback reviews with explicit disclosure.
+signals, scores, risk flags, or source data. When the configured LLM provider is
+unavailable, it emits deterministic fallback reviews with explicit disclosure.

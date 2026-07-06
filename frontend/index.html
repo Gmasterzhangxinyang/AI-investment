@@ -29,6 +29,7 @@
           <a href="#data">数据状态</a>
           <a href="#agents">运行审计</a>
           <a href="#settings">策略参数</a>
+          <a href="#param-guide">参数说明</a>
         </nav>
 
         <div class="rail-footer">
@@ -68,34 +69,35 @@
               <div class="command-panel">
                 <div class="chat-head">
                   <div class="chat-brand-row">
-                    <span>AI 投研助手</span>
-                    <span>规则驱动 · 可审计</span>
+                    <span>专业投研助理</span>
+                    <span>本地数据 · 规则证据 · 风险约束</span>
                   </div>
                   <div>
                     <p class="eyebrow">投研问答</p>
-                    <h2>今天想看什么？</h2>
-                    <p>可以询问 ETF、TL、可转债、数据质量和运行审计。交易信号只来自确定性规则，AI 只解释证据。</p>
+                    <h2>今天想研究什么？</h2>
+                    <p>可以问单只 ETF、TL、可转债、数据质量、参数和整体风险。AI 会先查本地证据，再按投研框架解释，不改写交易信号。</p>
                   </div>
                 </div>
 
                 <form id="chat-form" class="chat-composer">
                   <input id="chat-input" name="question" autocomplete="off" placeholder="询问 ETF、TL、可转债或数据质量" />
                   <button id="ai-chat-toggle" class="button ai-mode-toggle" type="button">AI 智能问答</button>
+                  <button id="clear-chat-memory" class="button" type="button">清除记忆</button>
                   <button class="button primary" type="submit">发送</button>
                 </form>
 
                 <div class="quick-prompts" aria-label="Suggested prompts">
-                  <button type="button" data-question="今天整体结论是什么？客户能不能直接看？">今日结论</button>
-                  <button type="button" data-question="今天有哪些 ETF 满足建仓条件？如果没有，原因是什么？">ETF 建仓</button>
-                  <button type="button" data-question="TL 今天是什么状态？请按客户规则解释 MACD 和 KDJ。">TL 状态</button>
-                  <button type="button" data-question="当前数据质量有什么问题？哪些需要人工确认？">数据质量</button>
+                  <button type="button" data-question="今天整体怎么看？请像投研助理一样总结机会、风险和下一步复核重点。">整体研判</button>
+                  <button type="button" data-question="今天 ETF 里相对强的是哪些？为什么高分但没有触发建仓？">ETF 强弱</button>
+                  <button type="button" data-question="TL 今天是什么状态？请拆开周线、日线、MACD 和 KDJ 解释。">TL 状态</button>
+                  <button type="button" data-question="可转债今天为什么没有合格 Top 候选？弱观察和风险观察里主要问题是什么？">转债质量</button>
                 </div>
               </div>
 
               <div id="transcript-panel" class="transcript-panel is-empty">
                 <div class="transcript-head">
                   <span>对话记录</span>
-                  <span>答案必须引用规则或数据库</span>
+                  <span id="chat-memory-status">短期记忆：空</span>
                 </div>
                 <div id="chat-log" class="chat-log" aria-live="polite">
                   <article class="message assistant">
@@ -418,6 +420,20 @@
             <article class="card">
               <div class="section-head compact">
                 <div>
+                  <h3>AI 模型</h3>
+                  <p>只影响前端 AI 智能问答，不影响策略计算和已生成日报。</p>
+                </div>
+                <div class="header-actions">
+                  <button id="refresh-openai-models" class="button" type="button">刷新模型</button>
+                  <button id="save-model-config" class="button primary" type="button">保存模型</button>
+                </div>
+              </div>
+              <div id="model-config-status" class="plain-text">正在读取模型配置。</div>
+              <form id="model-config-form" class="params-form"></form>
+            </article>
+            <article class="card">
+              <div class="section-head compact">
+                <div>
                   <h3>策略参数</h3>
                   <p>保存后下一次刷新生效，历史报告不会被改写。</p>
                 </div>
@@ -426,6 +442,94 @@
               <div id="params-status" class="plain-text">正在读取参数。</div>
               <form id="params-form" class="params-form"></form>
             </article>
+          </div>
+        </section>
+
+        <section id="param-guide" class="view">
+          <div class="asset-workspace">
+            <div class="module-hero">
+              <div>
+                <p class="eyebrow">参数说明</p>
+                <h2>策略参数说明</h2>
+                <p>这里解释参数“改了会发生什么”。参数保存后不会改写已生成日报，需要点击一键刷新后才会进入新的策略计算。</p>
+              </div>
+              <div class="shortcut-row">
+                <a href="#settings">修改参数</a>
+                <a href="#report">查看日报</a>
+              </div>
+            </div>
+
+            <div class="page-grid">
+              <article class="card">
+                <h3>ETF 参数</h3>
+                <div class="param-doc-list">
+                  <div><strong>建仓量能倍数</strong><span>今日成交量 / 前 60 个交易日均量。调高后建仓更少、更保守；调低后信号更多，但噪音也更多。</span></div>
+                  <div><strong>跌破 MA10 平仓量能</strong><span>持仓 ETF 跌破 MA10 时，需要同步放量才提示平仓。调低会更敏感。</span></div>
+                  <div><strong>跌破 MA5 平仓量能</strong><span>更短线的风险提示阈值。通常不宜低于 MA10 平仓量能太多。</span></div>
+                  <div><strong>趋势 / MACD / 量能权重</strong><span>影响 ETF 全量强弱评分，不等于触发信号。触发仍要看完整规则条件。</span></div>
+                </div>
+              </article>
+
+              <article class="card">
+                <h3>TL 参数</h3>
+                <div class="param-doc-list">
+                  <div><strong>日线 KDJ 窗口</strong><span>回看最近几个交易日是否出现过 J 值低点。窗口越长，越容易覆盖更早低点。</span></div>
+                  <div><strong>日线 J 低位阈值</strong><span>J 值低于该阈值才算低位。阈值越高，低位条件越容易满足。</span></div>
+                  <div><strong>周线 KDJ 窗口 / J 低位阈值</strong><span>用于确认周线是否出现低位后回升，优先级高于日线短期信号。</span></div>
+                  <div><strong>周线不做交易硬否决</strong><span>开启后，周线不利时日线不能强行升级为建仓候选。</span></div>
+                </div>
+              </article>
+
+              <article class="card span-2">
+                <h3>可转债风控参数</h3>
+                <div class="param-guide-grid">
+                  <div><strong>最低价格 / 最高价格上限</strong><span>决定普通候选池的价格范围。当前模型聚焦 100 到 140 元区间。</span></div>
+                  <div><strong>高 YTM 硬排除</strong><span>YTM 过高通常反映信用或兑付担忧，不会被当成低风险高收益。</span></div>
+                  <div><strong>严重负 YTM 硬排除</strong><span>YTM 过低说明债底收益或价格性价比不足，低于阈值不进入普通 Top 候选。</span></div>
+                  <div><strong>高溢价扣分线 / 硬排除</strong><span>溢价率超过扣分线会降分；达到硬排除线则不进入普通 Top 候选。</span></div>
+                  <div><strong>不强赎公告有效天数</strong><span>触发强赎价但有不强赎公告时，用该天数判断公告是否仍有效。</span></div>
+                  <div><strong>强赎未明硬排除</strong><span>开启后，触发强赎价但没有有效不强赎公告的转债默认直接排除。</span></div>
+                </div>
+              </article>
+
+              <article class="card span-2">
+                <h3>可转债评分与分层</h3>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr><th>维度</th><th>含义</th><th>调高权重后的影响</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>基本面</td><td>扣非净利润增长、增长加速、利润质量。</td><td>更偏业绩改善标的。</td></tr>
+                      <tr><td>溢价率</td><td>转股溢价率质量，溢价越高通常性价比越弱。</td><td>更压制高溢价标的。</td></tr>
+                      <tr><td>YTM 质量</td><td>到期收益率质量，不是越高越好，也不是越负越好。</td><td>更重视债底收益的合理性。</td></tr>
+                      <tr><td>信用</td><td>评级、价格、YTM 风险共同影响信用得分。</td><td>更偏信用稳健标的。</td></tr>
+                      <tr><td>强赎状态</td><td>强赎触发、不强赎公告有效性和公告风险。</td><td>更压制强赎相关风险。</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p class="plain-text">Top 表只展示合格候选，不会从弱观察或风险观察里补足 10 只。评分高但存在硬风险时，仍可能不进入 Top 候选。</p>
+              </article>
+
+              <article class="card">
+                <h3>建议调参顺序</h3>
+                <ol class="param-steps">
+                  <li>先固定硬风控：价格、强赎、ST、低评级、高溢价、严重负 YTM。</li>
+                  <li>再调扣分项：负 YTM、高溢价、利润为负、增长率异常。</li>
+                  <li>最后调权重：基本面、溢价率、YTM、信用、强赎、期限、规模。</li>
+                  <li>每次只改少数参数，保存后点击一键刷新，再看结果变化。</li>
+                </ol>
+              </article>
+
+              <article class="card">
+                <h3>重要边界</h3>
+                <div class="param-doc-list">
+                  <div><strong>参数不改历史</strong><span>保存参数只影响下一次刷新，不会改写已经生成的日报和数据库记录。</span></div>
+                  <div><strong>分数不是交易指令</strong><span>ETF 强弱分和可转债评分只是排序依据，触发仍以规则和资格分层为准。</span></div>
+                  <div><strong>AI 不改参数</strong><span>投研问答只能解释参数和结果，不能自行修改阈值、权重或信号。</span></div>
+                </div>
+              </article>
+            </div>
           </div>
         </section>
       </main>

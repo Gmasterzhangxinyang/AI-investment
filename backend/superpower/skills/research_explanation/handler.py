@@ -73,7 +73,7 @@ def deterministic_summary(
         f"ETF建仓候选 {len(buys)} 个，关注池 {len(watchlist)} 个，平仓提示 {len(sells)} 个。",
         f"TL日频状态为“{tl_state}”。",
         f"可转债合格Top候选数量为 {len(cb_top10)} 个。",
-        "当前解释由确定性模板生成；配置开启且存在 OPENAI_API_KEY 后，可由大模型生成解释文本，但交易信号仍由规则代码生成。",
+        "当前解释由确定性模板生成；配置开启且可用 LLM provider 后，可由大模型生成解释文本，但交易信号仍由规则代码生成。",
     ]
     if not buys.empty:
         top = buys.iloc[0]

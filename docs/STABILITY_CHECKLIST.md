@@ -7,7 +7,7 @@
 - [ ] `serve.py` can start.
 - [ ] `run_daily` can finish with ETF、TL、可转债三个文件齐全。
 - [ ] `run_daily` can finish with one missing file.
-- [ ] OpenAI unavailable does not block `--disable-llm` mode.
+- [ ] LLM provider unavailable does not block `--disable-llm` mode.
 - [ ] QA audit 非 PASS 默认不阻断日报生成。
 - [ ] `--strict-audit` 下 audit FAIL 会返回非 0。
 

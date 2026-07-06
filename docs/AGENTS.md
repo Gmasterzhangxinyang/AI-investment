@@ -35,8 +35,9 @@ Signals remain deterministic. LLM output can explain results but cannot change s
 
 Large-model usage is intentionally limited to the review and language layer.
 
-- When `configs/model_config.json` has `llm_enabled=true` and `OPENAI_API_KEY` exists, `ai-research-committee` and `research-explanation` call OpenAI through `tools/llm.py`.
-- The call uses the Responses API and the configured primary model.
+- When `configs/model_config.json` has `llm_enabled=true`, `ai-research-committee` and `research-explanation` call the configured LLM provider through `tools/llm.py`.
+- Current default provider is `openai` through the Responses API; `opencode` remains an optional provider but is not the default product path.
+- The chat assistant uses a separate `chat` override in `model_config.json`; the frontend `AI 模型` panel can update the OpenAI chat model and masked key without changing deterministic strategy Agents.
 - The model can only write explanatory text based on already generated deterministic signal tables.
 - It cannot create new ETF/TL signals, change scores, change TL state, or override QA/risk flags.
 - If the API key is missing or the request fails, the system falls back to deterministic commentary and records the reason in Agent Audit.

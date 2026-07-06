@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import queue
 import subprocess
 import sys
@@ -12,6 +13,8 @@ from pathlib import Path
 from threading import Thread
 from time import monotonic
 from typing import Any
+import urllib.error
+import urllib.request
 from urllib.parse import parse_qs, quote, urlparse
 from uuid import uuid4
 
@@ -66,6 +69,12 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
         if path.startswith("/api/strategy-params"):
             self._send_json({"status": "success", "params": self._load_strategy_params()})
             return
+        if path.startswith("/api/openai-models"):
+            self._send_json(self._openai_models())
+            return
+        if path.startswith("/api/model-config"):
+            self._send_json({"status": "success", "config": _public_model_config(self._load_model_config())})
+            return
         if path.startswith("/api/assets/detail"):
             query = parse_qs(parsed.query)
             code = (query.get("code") or [""])[0].strip()
@@ -91,6 +100,12 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
             return
         if path.startswith("/api/strategy-params"):
             self._save_strategy_params()
+            return
+        if path.startswith("/api/model-config/verify"):
+            self._verify_openai_connection()
+            return
+        if path.startswith("/api/model-config"):
+            self._save_model_config()
             return
         if path.startswith("/api/export-pdf"):
             self._export_pdf()
@@ -357,6 +372,7 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
             question = str(payload.get("question", "")).strip()
             session_id = str(payload.get("sessionId", "default")).strip() or "default"
             user_id = str(payload.get("userId", "local-user")).strip() or "local-user"
+            short_term_memory = payload.get("shortTermMemory") if isinstance(payload.get("shortTermMemory"), dict) else {}
         except Exception:
             self._send_json({"status": "failed", "message": "Invalid JSON body."}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -367,7 +383,14 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
 
         try:
             orchestrator = self.chat_orchestrator or ChatOrchestrator(self.root_dir)
-            response = orchestrator.run(ChatRequest(question=question, session_id=session_id, user_id=user_id))
+            response = orchestrator.run(
+                ChatRequest(
+                    question=question,
+                    session_id=session_id,
+                    user_id=user_id,
+                    short_term_memory=short_term_memory,
+                )
+            )
         except FileNotFoundError as exc:
             self._send_json({"status": "failed", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -404,6 +427,108 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
             self._send_json({"status": "failed", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         self._send_json({"status": "success", "params": params})
+
+    def _save_model_config(self) -> None:
+        try:
+            payload = self._read_json_body()
+            config = payload.get("config", payload)
+            if not isinstance(config, dict):
+                raise ValueError("Model config must be a JSON object.")
+            _validate_model_config(config)
+            path = self.root_dir / "configs" / "model_config.json"
+            existing = self._load_model_config()
+            config = _merge_model_config_secrets(existing, config)
+            tmp_path = path.with_suffix(".json.tmp")
+            tmp_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            tmp_path.replace(path)
+        except Exception as exc:
+            self._send_json({"status": "failed", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        self._send_json({"status": "success", "config": _public_model_config(config)})
+
+    def _openai_models(self) -> dict[str, Any]:
+        config = self._load_model_config()
+        api_key = _model_config_secret(config, "api_key", "api_key_env", "OPENAI_API_KEY")
+        fallback = _fallback_openai_models(config)
+        if not api_key:
+            return {
+                "status": "success",
+                "models": fallback,
+                "source": "fallback",
+                "message": "未配置 OpenAI key，显示本地候选模型。",
+            }
+        try:
+            models = _fetch_openai_model_ids(api_key)
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            return {
+                "status": "success",
+                "models": fallback,
+                "source": "fallback",
+                "message": f"OpenAI 模型列表读取失败：HTTP {exc.code} {detail[:120]}",
+            }
+        except Exception as exc:
+            return {
+                "status": "success",
+                "models": fallback,
+                "source": "fallback",
+                "message": f"OpenAI 模型列表读取失败：{exc}",
+            }
+        return {
+            "status": "success",
+            "models": models or fallback,
+            "source": "openai" if models else "fallback",
+            "message": f"已读取 OpenAI 可用模型 {len(models)} 个。" if models else "OpenAI 返回空模型列表，显示本地候选模型。",
+        }
+
+    def _verify_openai_connection(self) -> None:
+        try:
+            payload = self._read_json_body()
+            config = self._load_model_config()
+            api_key = str(payload.get("apiKey") or payload.get("api_key") or "").strip()
+            if not api_key:
+                api_key = _model_config_secret(config, "api_key", "api_key_env", "OPENAI_API_KEY")
+            if not api_key:
+                self._send_json(
+                    {
+                        "status": "success",
+                        "connected": False,
+                        "models": _fallback_openai_models(config),
+                        "message": "未配置 OpenAI key，请点击修改 Key 后填入有效 key。",
+                    }
+                )
+                return
+            models = _fetch_openai_model_ids(api_key)
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            self._send_json(
+                {
+                    "status": "success",
+                    "connected": False,
+                    "models": _fallback_openai_models(self._load_model_config()),
+                    "message": f"OpenAI 验证失败：HTTP {exc.code} {detail[:160]}",
+                }
+            )
+            return
+        except Exception as exc:
+            self._send_json(
+                {
+                    "status": "success",
+                    "connected": False,
+                    "models": _fallback_openai_models(self._load_model_config()),
+                    "message": f"OpenAI 验证失败：{exc}",
+                }
+            )
+            return
+        self._send_json(
+            {
+                "status": "success",
+                "connected": True,
+                "models": models,
+                "message": f"OpenAI 连通正常，已读取可用模型 {len(models)} 个。",
+                "api_key_masked": _mask_secret(api_key),
+            }
+        )
 
     def _read_json_body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
@@ -616,3 +741,92 @@ def _validate_strategy_params(params: dict[str, Any]) -> None:
         raise ValueError("ETF buy_volume_ratio_min must be positive.")
     if float(cb.get("min_price", 0)) >= float(cb.get("price_limit", 0)):
         raise ValueError("Convertible bond min_price must be below price_limit.")
+
+
+def _validate_model_config(config: dict[str, Any]) -> None:
+    provider = str(config.get("provider", "openai")).strip().lower()
+    if provider not in {"openai", "opencode"}:
+        raise ValueError("Model provider must be openai or opencode.")
+    primary_model = str(config.get("primary_model", "")).strip()
+    if not primary_model:
+        raise ValueError("primary_model is required.")
+    chat = config.get("chat")
+    if chat is not None:
+        if not isinstance(chat, dict):
+            raise ValueError("chat config must be an object.")
+        chat_provider = str(chat.get("provider", provider)).strip().lower()
+        if chat_provider not in {"openai", "opencode"}:
+            raise ValueError("chat.provider must be openai or opencode.")
+        chat_model = str(chat.get("primary_model", primary_model)).strip()
+        if not chat_model:
+            raise ValueError("chat.primary_model is required.")
+
+
+def _public_model_config(config: dict[str, Any]) -> dict[str, Any]:
+    public = json.loads(json.dumps(config, ensure_ascii=False))
+    api_key = str(public.pop("api_key", "") or "").strip()
+    env_name = str(public.get("api_key_env") or "OPENAI_API_KEY").strip()
+    env_key = os.environ.get(env_name, "").strip() if env_name else ""
+    configured_key = api_key or env_key
+    public["api_key_configured"] = bool(configured_key)
+    public["api_key_masked"] = _mask_secret(configured_key)
+    return public
+
+
+def _merge_model_config_secrets(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(incoming)
+    merged.pop("api_key_configured", None)
+    merged.pop("api_key_masked", None)
+    incoming_key = str(incoming.get("api_key") or "").strip()
+    if incoming_key:
+        merged["api_key"] = incoming_key
+    elif existing.get("api_key"):
+        merged["api_key"] = existing["api_key"]
+    else:
+        merged.pop("api_key", None)
+    return merged
+
+
+def _model_config_secret(config: dict[str, Any], value_key: str, env_key: str, default_env: str) -> str:
+    value = str(config.get(value_key) or "").strip()
+    if value:
+        return value
+    env_name = str(config.get(env_key) or default_env).strip()
+    return os.environ.get(env_name, "").strip() if env_name else ""
+
+
+def _mask_secret(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 10:
+        return value[:2] + "..." + value[-2:]
+    return value[:7] + "..." + value[-4:]
+
+
+def _fallback_openai_models(config: dict[str, Any]) -> list[str]:
+    chat = config.get("chat") if isinstance(config.get("chat"), dict) else {}
+    candidates = [
+        chat.get("primary_model"),
+        config.get("primary_model"),
+        config.get("economy_model"),
+        "gpt-5.5",
+        "gpt-5.4-mini",
+    ]
+    return list(dict.fromkeys(str(item).strip() for item in candidates if str(item or "").strip()))
+
+
+def _fetch_openai_model_ids(api_key: str) -> list[str]:
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/models",
+        headers={"Authorization": f"Bearer {api_key}"},
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    return sorted(
+        {
+            str(item.get("id", "")).strip()
+            for item in body.get("data", [])
+            if isinstance(item, dict) and str(item.get("id", "")).strip()
+        }
+    )
