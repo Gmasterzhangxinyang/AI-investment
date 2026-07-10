@@ -269,7 +269,7 @@ Official states:
 
 ```text
 do_not_participate
-turning_watch
+trend_not_confirmed
 trend_confirmed
 data_unavailable
 ```
@@ -289,22 +289,13 @@ ma20_slope_state == down
 or weekly_macd_state == green_widening
 ```
 
-It is also the fallback when neither the watch nor confirmation conditions below are complete.
-
 A daily golden cross or large positive volume bar cannot override this state.
 
-### 10.3 `turning_watch`
+### 10.3 `trend_not_confirmed`
 
-Returned when all are true:
+Returned when no hard veto is active but the `trend_confirmed` conditions below are incomplete.
 
-```text
-ma20_slope_state in {flat, up}
-daily_macd_hist > 0
-weekly_macd_state in {green_narrowing, red_weakening, red_strengthening}
-trend_confirmed conditions are not all complete
-```
-
-This captures the early pattern discussed for Innovation Drug ETF: daily momentum has turned positive while the completed weekly bar may still be negative but improving. It is observation only and cannot create a buy candidate.
+This state does not create a watchlist row by itself. Early observation is produced by the short-term `close_watch` rule, which reports the weekly MACD and MA20 checks separately.
 
 ### 10.4 `trend_confirmed`
 
@@ -326,6 +317,7 @@ Official states:
 
 ```text
 no_entry
+close_watch
 overheated_do_not_chase
 waiting_confirmation
 waiting_pullback
@@ -333,9 +325,61 @@ can_enter
 data_unavailable
 ```
 
-The short module cannot override medium eligibility.
+The short module cannot turn an ETF into `can_enter` or a buy candidate unless the medium status is `trend_confirmed`. `close_watch` is an observation state only and leaves `eligible` false.
 
-### 11.1 Setup event
+State routing is fixed before the setup state machine runs:
+
+```text
+insufficient required data -> data_unavailable
+medium status in {do_not_participate, trend_not_confirmed}
+  and close-watch trigger is true  -> close_watch
+medium status in {do_not_participate, trend_not_confirmed}
+  and close-watch trigger is false -> no_entry
+medium status == trend_confirmed   -> evaluate overheat, setup, confirmation, and pullback
+```
+
+### 11.1 `close_watch`
+
+This is the customer-defined early observation rule. It is returned when all are true:
+
+```text
+MA5 > MA10
+medium status in {do_not_participate, trend_not_confirmed}
+and either:
+  daily MACD histogram < 0 and daily histogram > previous daily histogram
+  or previous daily MACD histogram <= 0 and current daily histogram > 0
+```
+
+The first branch means the daily green histogram is narrowing. The second means daily MACD has changed from green to red. `MA5 > MA10` is a continuing relationship, not only a same-day cross; the output separately records whether the cross happened today.
+
+`close_watch` may be shown even when medium status is `do_not_participate`. It is observation only, never a buy candidate, and must state that the medium trend is not confirmed.
+
+Every `close_watch` result includes two explicit prompts:
+
+```text
+1. weekly_macd_confirmation_check
+   favorable:   weekly green histogram narrows or weekly red histogram strengthens
+   caution:     weekly red histogram weakens
+   unfavorable: weekly green histogram widens
+
+2. ma20_flat_check
+   met:         MA20 is flat
+   positive:    MA20 is rising
+   not_met:     MA20 is falling
+```
+
+The weekly check uses the last completed week, consistent with the official medium-term decision. The current partial-week value may be displayed as a clearly labeled preview, but it cannot change the check result.
+
+The user-facing message follows this structure:
+
+```text
+密切观察：MA5已在MA10上方，日MACD绿柱缩短或转红。
+中期确认项：
+1）周MACD是否绿柱缩短或红柱加长；
+2）MA20是否走平。
+```
+
+### 11.2 Setup event
 
 A setup begins when either event occurs:
 
@@ -346,7 +390,7 @@ or MA5 crosses above MA20 while medium status is trend_confirmed
 
 The setup records the setup date, close, high, volume, MA5, MA10, and MA20 from historical bars. It expires after 10 trading sessions or immediately if medium status leaves `trend_confirmed`.
 
-### 11.2 Overheat definition
+### 11.3 Overheat definition
 
 Defaults:
 
@@ -375,19 +419,20 @@ overheated =
   and ma5_distance >= overheat_ma5_distance_min
 ```
 
-An overheated bar returns `overheated_do_not_chase` even when the medium trend is confirmed. It begins a three-session cooling period. If medium status is `do_not_participate`, the result remains `no_entry`, with the large-bar risk included in `risk_notes`.
+An overheated bar returns `overheated_do_not_chase` when the medium trend is confirmed. It begins a three-session cooling period. When the medium status is not confirmed, state routing has already selected `close_watch` when its trigger is true, otherwise `no_entry`; in both cases the large-bar risk is included in `risk_notes`.
 
-### 11.3 `no_entry`
+### 11.4 `no_entry`
 
 Returned when:
 
 ```text
-medium status == do_not_participate
-or no active setup exists
-or the setup has expired
+medium status in {do_not_participate, trend_not_confirmed}
+  and the close-watch trigger is false
+or medium status == trend_confirmed and no active setup exists
+or medium status == trend_confirmed and the setup has expired
 ```
 
-### 11.4 `waiting_confirmation`
+### 11.5 `waiting_confirmation`
 
 Returned during the first three sessions after a valid setup when no later close has confirmed the setup and the ETF is not overheated.
 
@@ -401,7 +446,7 @@ ma5_distance < overheat_ma5_distance_min
 not overheated
 ```
 
-### 11.5 `waiting_pullback`
+### 11.6 `waiting_pullback`
 
 Returned when the medium trend remains confirmed and any is true:
 
@@ -413,7 +458,7 @@ or the first three-session confirmation window ended without confirmation
 
 The state remains eligible for pullback evaluation until the setup expires.
 
-### 11.6 Pullback confirmation
+### 11.7 Pullback confirmation
 
 Defaults:
 
@@ -444,7 +489,7 @@ pullback_confirmed =
   and medium status == trend_confirmed
 ```
 
-### 11.7 `can_enter`
+### 11.8 `can_enter`
 
 Returned when medium status is `trend_confirmed`, the ETF is not overheated, and either breakout confirmation or pullback confirmation is true.
 
@@ -489,8 +534,13 @@ short_entry_reason
 weekly_macd_state
 weekly_macd_hist
 weekly_macd_preview
+weekly_macd_confirmation_check
 ma20_slope_5d
 ma20_slope_state
+ma20_flat_check
+daily_macd_state
+ma5_above_ma10
+ma5_crossed_ma10_today
 setup_date
 setup_age
 ```
@@ -498,14 +548,14 @@ setup_age
 Existing projections remain:
 
 ```text
-can_enter + non-holding       -> buy_candidate
-waiting_confirmation          -> watch
-waiting_pullback              -> watch
-turning_watch                 -> watch
-overheated_do_not_chase       -> watch with risk flag
-legacy exit + holding         -> sell_alert
-all other valid states        -> neutral
-data unavailable              -> data_unavailable
+can_enter + non-holding                 -> buy_candidate
+close_watch + non-holding               -> watch
+waiting_confirmation + non-holding      -> watch
+waiting_pullback + non-holding          -> watch
+overheated_do_not_chase + non-holding   -> watch with risk flag
+legacy exit + holding                   -> sell_alert
+all other valid states                  -> neutral
+data_unavailable                        -> data_unavailable
 ```
 
 No holding ETF may be inserted into the public watchlist, even though its medium and short states remain visible in `all_signals`.
@@ -517,6 +567,7 @@ The feature is named `historical_diagnostics`, not a profit backtest.
 Diagnostic events are recorded only when a state changes into:
 
 ```text
+close_watch
 trend_confirmed
 overheated_do_not_chase
 waiting_pullback
@@ -585,7 +636,11 @@ The output compares `legacy_v1` and `trend_pullback_v2` on the same dates and in
 ### 17.4 Strategy scenarios
 
 - Prolonged decline plus one giant-volume bullish bar remains `do_not_participate` and cannot buy.
-- MA20 flattening plus daily red MACD plus narrowing weekly green MACD becomes `turning_watch`.
+- MA5 above MA10 plus a narrowing daily green MACD histogram becomes `close_watch` and displays both medium confirmation prompts.
+- MA5 above MA10 plus a daily green-to-red MACD transition becomes `close_watch` and displays both medium confirmation prompts.
+- `close_watch` may coexist with medium `do_not_participate`, but cannot create a buy candidate.
+- Insufficient medium-term history returns short `data_unavailable`, never `close_watch`.
+- A non-confirmed medium state returns `no_entry` when the close-watch trigger is absent.
 - MA5 above MA20 plus flat/rising MA20 plus weekly/daily red MACD becomes `trend_confirmed`.
 - An overheated confirmed-trend bar becomes `overheated_do_not_chase`.
 - A later support-holding, lower-volume pullback becomes `can_enter`.
@@ -595,7 +650,7 @@ The output compares `legacy_v1` and `trend_pullback_v2` on the same dates and in
 ### 17.5 Compatibility and diagnostics
 
 - V2 `can_enter` maps to the current buy-candidate table only for non-holdings.
-- V2 wait/overheat states map to watchlist only for non-holdings.
+- V2 close-watch/wait/overheat states map to watchlist only for non-holdings.
 - Existing dashboard keys remain present.
 - State-transition events are counted once per episode.
 - 5/10/20-day forward-return and excursion formulas are causal and exact.
@@ -626,7 +681,7 @@ The output compares `legacy_v1` and `trend_pullback_v2` on the same dates and in
 - Adding another registered strategy does not require changes to ETFAgent or report consumers.
 - `legacy_v1` remains selectable and matches characterized behavior.
 - `trend_pullback_v2` produces simultaneous medium and short states with full evidence.
-- MA20 decline and weekly green-widening conditions cannot be overridden by a daily spike.
+- MA20 decline and weekly green-widening conditions cannot be overridden for entry by a daily signal; a `close_watch` row may still be displayed with failed medium checks.
 - Weekly official states are causal and stable during the report week.
 - Overheat, confirmation, and pullback states follow the configured state machine.
 - Missing or invalid plugins fail closed.
