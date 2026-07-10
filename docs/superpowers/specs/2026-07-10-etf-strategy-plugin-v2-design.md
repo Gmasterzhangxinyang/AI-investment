@@ -180,6 +180,45 @@ They are normalized into the `legacy_v1` profile in memory. Saving configuration
 
 Only `active_strategy` controls live buy/watch/sell projections. `diagnostic_strategies` may run in historical-diagnostic mode but cannot change the live decision.
 
+### 8.1 End-user selection workflow
+
+The normal user does not edit JSON manually. The frontend strategy-parameter page adds an `ETF策略` selector populated from registered strategy metadata.
+
+Initial options:
+
+```text
+原始策略 (legacy_v1)
+趋势回踩策略 (trend_pullback_v2)
+```
+
+The daily workflow is:
+
+1. Open `策略参数 -> ETF策略`.
+2. Select the active strategy from the dropdown.
+3. Review that strategy's versioned parameters and keep defaults or edit allowed values.
+4. Save through the existing strategy-parameter API.
+5. Refresh data to generate a new dashboard and report.
+6. Read the active strategy ID/version plus simultaneous medium and short states in ETF results.
+
+Saving changes configuration only. Existing dashboard results remain unchanged until refresh completes successfully. The previous valid dashboard remains available if refresh fails.
+
+The page may expose `旧版与新版历史诊断对比` as a separate option. It changes `diagnostic_strategies` only; it cannot change `active_strategy` or create live buy/sell projections from a non-active strategy.
+
+### 8.2 Developer plugin lifecycle
+
+To add another ETF strategy, a developer:
+
+1. Adds a package under `strategies/`.
+2. Implements the stable `ETFStrategy` contract.
+3. Provides strategy metadata, version, default parameters, and parameter validation.
+4. Registers the explicit strategy name in `ETFStrategyRegistry`.
+5. Adds contract, behavior, failure, and compatibility tests.
+6. Restarts the local service once so the new Python package is loaded.
+
+After installation, switching among already registered strategies requires only save plus data refresh, not another service restart.
+
+The frontend must show a clear error and retain the previous selection when the requested strategy name is unknown or its profile is invalid. Runtime plugin failure produces no ETF signal and never silently activates another strategy.
+
 ## 9. Shared indicator additions
 
 ### 9.1 MA20 normalized slope
@@ -566,20 +605,24 @@ The output compares `legacy_v1` and `trend_pullback_v2` on the same dates and in
 
 1. Add characterization tests around current ETF behavior.
 2. Extract `legacy_v1` behind the stable plugin contract with no intended output change.
-3. Add configuration normalization and explicit strategy selection.
+3. Add configuration normalization, registry metadata, API validation, and explicit strategy selection.
 4. Add MA20 slope and causal ETF weekly MACD indicators.
 5. Implement and unit-test the medium trend module.
 6. Implement and unit-test the short entry state machine.
 7. Compose `trend_pullback_v2` with legacy exit and ranking components.
 8. Add canonical fields and compatibility projections.
 9. Add 5/10/20-day historical diagnostics for both strategies.
-10. Update ETF-only documentation, reports, chat evidence, and frontend display.
+10. Add the frontend ETF-strategy selector, save/refresh workflow, diagnostics selector, and update ETF-only documentation, reports, and chat evidence.
 11. Run legacy parity, full automated tests, daily workflow, audit, and dashboard verification.
 12. Compare old and new diagnostics before making `trend_pullback_v2` the default.
 
 ## 19. Acceptance criteria
 
 - The active ETF strategy is selected by configuration.
+- A user can select a registered strategy from the frontend, save it, refresh data, and see the selected ID/version in generated ETF results.
+- Saving a strategy does not mutate already-generated results before refresh.
+- Diagnostic comparison cannot change the active live strategy.
+- Installing a new strategy requires a service restart once; switching installed strategies does not.
 - Adding another registered strategy does not require changes to ETFAgent or report consumers.
 - `legacy_v1` remains selectable and matches characterized behavior.
 - `trend_pullback_v2` produces simultaneous medium and short states with full evidence.
