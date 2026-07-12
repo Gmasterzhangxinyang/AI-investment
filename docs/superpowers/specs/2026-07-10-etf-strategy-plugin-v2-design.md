@@ -1,7 +1,8 @@
 # ETF v2 Configurable Strategy Plugin Design
 
 **Date:** 2026-07-10  
-**Status:** Approved conversational design, pending written-spec review  
+**Status:** Approved for implementation (customer confirmed 2026-07-12)
+
 **Scope:** ETF only
 
 ## 1. Purpose
