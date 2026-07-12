@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns } = require("../../frontend/assets/strategy-config.js");
+const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, tableColumnClass, strategyStateLabel } = require("../../frontend/assets/strategy-config.js");
 
 test("deepMerge preserves dormant profiles and replaces arrays", () => {
   const current = { etf: { diagnostic_strategies: ["legacy_v1"], strategy_profiles: { future_v3: { kept: true } } } };
@@ -38,4 +38,17 @@ test("medium and short state columns only show for generated v2 results", () => 
   assert.equal(showV2StateColumns({ strategy_id: "legacy_v1", strategy_version: "1.0.0" }), false);
   assert.equal(showV2StateColumns({ strategy_id: "trend_pullback_v2", strategy_version: "2.0.0" }), true);
   assert.equal(showV2StateColumns(null), false);
+});
+
+test("ETF explanation columns receive a wrapping class", () => {
+  assert.equal(tableColumnClass("watch_type"), "long-text-column");
+  assert.equal(tableColumnClass("signal_reason"), "long-text-column");
+  assert.equal(tableColumnClass("suggested_action"), "long-text-column");
+  assert.equal(tableColumnClass("score"), "");
+});
+
+test("strategy state codes render as concise Chinese labels", () => {
+  assert.equal(strategyStateLabel("medium_status", "trend_confirmed"), "趋势已确认");
+  assert.equal(strategyStateLabel("short_entry_status", "overheated_do_not_chase"), "过热不追");
+  assert.equal(strategyStateLabel("short_entry_status", "can_enter"), "可考虑入场");
 });

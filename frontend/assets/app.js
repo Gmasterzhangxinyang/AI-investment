@@ -76,6 +76,7 @@ const formatNumber = (value) => {
 const formatValue = (key, value) => {
   if ((key === "date" || key.endsWith("_date")) && typeof value === "string") return value.slice(0, 10);
   if (key.includes("return") && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
+  if (key === "medium_status" || key === "short_entry_status") return ETFStrategyConfig.strategyStateLabel(key, value);
   return formatNumber(value);
 };
 
@@ -968,9 +969,6 @@ function render() {
     ["code", "代码"],
     ...etfStateColumns,
     ["close", "收盘"],
-    ["ma5_ma10_signal", "MA5/MA10"],
-    ["vol_ratio60", "量能倍数"],
-    ["volume_check", "量能检查"],
     ["score", "评分"],
     ["signal_reason", "触发原因"],
   ];
@@ -979,8 +977,6 @@ function render() {
     ["code", "代码"],
     ...etfStateColumns,
     ["close", "收盘"],
-    ["ma5_ma10_signal", "MA5/MA10"],
-    ["vol_ratio60", "量能倍数"],
     ["score", "评分"],
     ["signal_reason", "触发原因"],
   ];
@@ -989,11 +985,8 @@ function render() {
     ["code", "代码"],
     ...etfStateColumns,
     ["close", "收盘"],
-    ["ma5_ma10_signal", "MA5/MA10"],
-    ["vol_ratio60", "量能倍数"],
     ["watch_type", "关注原因"],
-    ["missing_condition", "缺口"],
-    ["suggested_action", "动作"],
+    ["suggested_action", "下一步"],
   ];
   const etfAllColumns = [
     ["rank", "排名"],
@@ -1503,22 +1496,23 @@ function renderTable(id, rows, columns, mode) {
     table.innerHTML = `<thead><tr><th>暂无数据</th></tr></thead>`;
     return;
   }
-  const thead = `<thead><tr>${columns.map((col) => `<th>${escapeHtml(col[1])}</th>`).join("")}</tr></thead>`;
+  const thead = `<thead><tr>${columns.map(([key, label]) => `<th class="${ETFStrategyConfig.tableColumnClass(key)}" data-column="${escapeHtml(key)}">${escapeHtml(label)}</th>`).join("")}</tr></thead>`;
   const tbody = rows
     .map((row) => {
       const cells = columns
         .map(([key]) => {
           const value = row[key];
+          const columnClass = ETFStrategyConfig.tableColumnClass(key);
           if (key === "status" || key === "level" || key === "exists" || key === "result") {
             const tagClass =
               value === "OK" || value === "INFO" || value === "success" || value === true || value === "对" ? "ok" : "warn";
-            return `<td><span class="tag ${tagClass}">${escapeHtml(value)}</span></td>`;
+            return `<td class="${columnClass}" data-column="${escapeHtml(key)}"><span class="tag ${tagClass}">${escapeHtml(value)}</span></td>`;
           }
           if (key === "signal_reason" || key === "watch_type") {
             const tagClass = mode === "sell" ? "sell" : mode === "watch" ? "watch" : "buy";
-            return `<td><span class="tag ${tagClass}">${escapeHtml(value)}</span></td>`;
+            return `<td class="${columnClass}" data-column="${escapeHtml(key)}"><span class="tag ${tagClass}">${escapeHtml(value)}</span></td>`;
           }
-          return `<td>${escapeHtml(formatValue(key, value))}</td>`;
+          return `<td class="${columnClass}" data-column="${escapeHtml(key)}">${escapeHtml(formatValue(key, value))}</td>`;
         })
         .join("");
       return `<tr>${cells}</tr>`;

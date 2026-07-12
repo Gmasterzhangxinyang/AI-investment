@@ -2969,6 +2969,51 @@ body:not([data-view="chat"]) td {
   color: #303030;
 }
 
+#etf-buy-table,
+#etf-sell-table {
+  min-width: 860px;
+}
+
+#etf-watch-table {
+  min-width: 980px;
+}
+
+#etf-all-table {
+  min-width: 1320px;
+}
+
+th.long-text-column,
+td.long-text-column {
+  width: 240px;
+  min-width: 240px;
+  white-space: normal;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+td.long-text-column .tag {
+  display: block;
+  width: auto;
+  max-width: 420px;
+  height: auto;
+  white-space: normal;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+#etf-buy-table [data-column="medium_status"],
+#etf-buy-table [data-column="short_entry_status"],
+#etf-sell-table [data-column="medium_status"],
+#etf-sell-table [data-column="short_entry_status"],
+#etf-watch-table [data-column="medium_status"],
+#etf-watch-table [data-column="short_entry_status"],
+#etf-all-table [data-column="medium_status"],
+#etf-all-table [data-column="short_entry_status"] {
+  min-width: 132px;
+}
+
 body:not([data-view="chat"]) tbody tr:hover {
   background: #f8f8f8;
 }

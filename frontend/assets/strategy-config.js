@@ -46,5 +46,36 @@
     return generated?.strategy_id === "trend_pullback_v2";
   }
 
-  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns };
+  function tableColumnClass(key) {
+    return ["signal_reason", "watch_type", "missing_condition", "suggested_action", "decision_reason"].includes(key)
+      ? "long-text-column"
+      : "";
+  }
+
+  function strategyStateLabel(key, value) {
+    const labels = {
+      medium_status: {
+        trend_confirmed: "趋势已确认",
+        trend_not_confirmed: "趋势未确认",
+        do_not_participate: "暂不参与",
+        data_unavailable: "数据不足",
+        not_applicable: "原策略不适用",
+      },
+      short_entry_status: {
+        can_enter: "可考虑入场",
+        close_watch: "密切观察",
+        overheated_do_not_chase: "过热不追",
+        waiting_confirmation: "等待确认",
+        waiting_pullback: "等待回踩",
+        no_entry: "暂无入场",
+        data_unavailable: "数据不足",
+        legacy_buy: "原策略建仓候选",
+        legacy_watch: "原策略观察",
+        legacy_neutral: "原策略未触发",
+      },
+    };
+    return labels[key]?.[value] || value || "--";
+  }
+
+  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, tableColumnClass, strategyStateLabel };
 });
