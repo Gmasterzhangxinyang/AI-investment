@@ -48,6 +48,18 @@ CANONICAL_SIGNAL_COLUMNS = [
     "medium_reason",
     "short_entry_status",
     "short_entry_reason",
+    "weekly_macd_state",
+    "weekly_macd_hist",
+    "weekly_macd_preview",
+    "weekly_macd_confirmation_check",
+    "ma20_slope_5d",
+    "ma20_slope_state",
+    "ma20_flat_check",
+    "daily_macd_state",
+    "ma5_above_ma10",
+    "ma5_crossed_ma10_today",
+    "setup_date",
+    "setup_age",
 ]
 
 SIGNAL_COLUMNS = LEGACY_SIGNAL_COLUMNS + CANONICAL_SIGNAL_COLUMNS

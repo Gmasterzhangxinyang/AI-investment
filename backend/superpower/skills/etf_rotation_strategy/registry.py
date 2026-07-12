@@ -39,6 +39,8 @@ class ETFStrategyRegistry:
 
 def default_registry() -> ETFStrategyRegistry:
     from .strategies.legacy_v1 import LegacyV1Strategy
+    from .strategies.trend_pullback_v2.defaults import DEFAULT_PROFILE, PARAMETER_SCHEMA
+    from .strategies.trend_pullback_v2.strategy import TrendPullbackV2Strategy
 
     registry = ETFStrategyRegistry()
     registry.register(
@@ -50,5 +52,15 @@ def default_registry() -> ETFStrategyRegistry:
             parameter_schema={},
         ),
         LegacyV1Strategy,
+    )
+    registry.register(
+        ETFStrategyMetadata(
+            strategy_id="trend_pullback_v2",
+            display_name="趋势回踩策略",
+            version="2.0.0",
+            default_params=DEFAULT_PROFILE,
+            parameter_schema=PARAMETER_SCHEMA,
+        ),
+        TrendPullbackV2Strategy,
     )
     return registry

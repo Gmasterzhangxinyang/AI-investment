@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 
 import pandas as pd
@@ -8,7 +9,7 @@ import pandas as pd
 from superpower.runtime.context import AgentContext
 
 from .compatibility import SIGNAL_COLUMNS, decisions_to_legacy_tables
-from .config import normalize_etf_config
+from .config import etf_config_hash, normalize_etf_config
 from .contracts import (
     ETFDecision,
     ETFHistory,
@@ -29,17 +30,32 @@ class Skill:
         etf = context.get("etf_indicators")
         positions = context.get("positions")
         params = context.get("strategy_params")
+        normalized = normalize_etf_config(params)
+        registry = default_registry()
+        strategy = registry.create(normalized["active_strategy"])
+        quality_warnings = _etf_quality_warnings(
+            context.maybe("data_quality_report", pd.DataFrame())
+        )
 
         signal_table, buys, sells, watchlist, details = latest_etf_signals(
             etf,
             positions,
             params,
+            quality_warnings=quality_warnings,
         )
         context.put("etf_signal_table", signal_table)
         context.put("etf_buy_candidates", buys)
         context.put("etf_sell_alerts", sells)
         context.put("etf_watchlist", watchlist)
         context.put("etf_detail_history", details)
+        context.put(
+            "etf_strategy_run",
+            {
+                "strategy_id": normalized["active_strategy"],
+                "strategy_version": strategy.version,
+                "config_hash": etf_config_hash(normalized),
+            },
+        )
         return {
             "signal_rows": len(signal_table),
             "buy_candidates": len(buys),
@@ -52,13 +68,53 @@ def latest_etf_signals(
     etf: pd.DataFrame,
     positions: pd.DataFrame,
     params: dict[str, Any],
+    *,
+    quality_warnings: Sequence[str] = (),
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     normalized = normalize_etf_config(params)
     registry = default_registry()
     strategy = registry.create(normalized["active_strategy"])
     profile = normalized["strategy_profiles"][normalized["active_strategy"]]
     decisions = evaluate_latest_by_symbol(etf, positions, strategy, profile)
+    decisions = attach_quality_warnings(decisions, quality_warnings)
     return decisions_to_legacy_tables(decisions, etf)
+
+
+def attach_quality_warnings(
+    decisions: Sequence[ETFDecision],
+    warnings: Sequence[str],
+) -> list[ETFDecision]:
+    clean = tuple(str(warning) for warning in warnings if str(warning).strip())
+    if not clean:
+        return list(decisions)
+    attached: list[ETFDecision] = []
+    for decision in decisions:
+        fields = dict(decision.compatibility_fields)
+        combined = (*decision.risk_notes, *clean)
+        fields["risk_notes"] = "；".join(combined)
+        fields["data_quality"] = "WARN"
+        attached.append(
+            replace(
+                decision,
+                risk_notes=combined,
+                data_quality="WARN",
+                compatibility_fields=fields,
+            )
+        )
+    return attached
+
+
+def _etf_quality_warnings(report: pd.DataFrame) -> tuple[str, ...]:
+    if report.empty or not {"item", "status"}.issubset(report.columns):
+        return ()
+    relevant = report[
+        report["status"].isin(["WARN", "ERROR", "FAIL"])
+        & report["item"].astype(str).str.contains("ETF", case=False, na=False)
+    ]
+    return tuple(
+        f"{row['item']}：{row.get('detail', '')} {row.get('note', '')}".strip()
+        for _, row in relevant.iterrows()
+    )
 
 
 def evaluate_latest_by_symbol(

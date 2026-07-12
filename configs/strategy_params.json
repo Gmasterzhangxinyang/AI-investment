@@ -1,13 +1,49 @@
 {
   "etf": {
+    "active_strategy": "legacy_v1",
+    "diagnostic_strategies": [
+      "legacy_v1",
+      "trend_pullback_v2"
+    ],
     "buy_volume_ratio_min": 1.1,
     "sell_ma10_volume_ratio_min": 1.2,
-    "sell_ma5_volume_ratio_min": 1.5,
+    "sell_ma5_volume_ratio_min": 1.2,
     "score_weights": {
       "trend": 0.35,
       "macd": 0.25,
       "volume": 0.25,
       "share_change": 0.15
+    },
+    "strategy_profiles": {
+      "legacy_v1": {
+        "buy_volume_ratio_min": 1.1,
+        "sell_ma10_volume_ratio_min": 1.2,
+        "sell_ma5_volume_ratio_min": 1.2,
+        "score_weights": {
+          "trend": 0.35,
+          "macd": 0.25,
+          "volume": 0.25,
+          "share_change": 0.15
+        }
+      },
+      "trend_pullback_v2": {
+        "medium_trend": {
+          "minimum_history_rows": 180,
+          "ma20_slope_lookback": 5,
+          "ma20_flat_tolerance": 0.003
+        },
+        "short_entry": {
+          "confirmation_window": 3,
+          "overheat_daily_return_min": 0.04,
+          "overheat_body_ratio_min": 0.6,
+          "overheat_volume_ratio_min": 1.8,
+          "overheat_ma5_distance_min": 0.03,
+          "overheat_cooldown_days": 3,
+          "pullback_support_tolerance": 0.005,
+          "pullback_max_intraday_break": 0.01,
+          "pullback_max_age": 10
+        }
+      }
     }
   },
   "tl": {
