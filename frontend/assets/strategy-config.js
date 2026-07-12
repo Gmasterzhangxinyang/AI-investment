@@ -80,7 +80,7 @@
   function historicalComparisonRows(rows) {
     const groups = new Map();
     (rows || [])
-      .filter((row) => row.state_type === "can_enter" && [5, 10, 20].includes(Number(row.horizon)))
+      .filter((row) => row.state_type === "can_enter" && [1, 3, 5, 10, 20].includes(Number(row.horizon)))
       .forEach((row) => {
         const horizon = Number(row.horizon);
         const key = `${row.strategy_id}|${horizon}`;

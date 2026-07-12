@@ -19,7 +19,7 @@ LEGACY_EVENT_MAP = {
     "legacy_watch": "close_watch",
     "legacy_buy": "can_enter",
 }
-HORIZONS = (5, 10, 20)
+HORIZONS = (1, 3, 5, 10, 20)
 
 
 def diagnostic_trace(

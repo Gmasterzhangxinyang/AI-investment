@@ -69,3 +69,14 @@ test("historical comparison combines v2 entry routes with weighted metrics", () 
   assert.equal(v2.false_reversal_10d_count, 4);
   assert.equal(v2.false_reversal_10d_rate, 0.4);
 });
+
+test("historical comparison keeps 1 3 5 10 and 20 trading day horizons", () => {
+  const rows = [1, 3, 5, 10, 20].map((horizon) => ({
+    strategy_id: "legacy_v1",
+    state_type: "can_enter",
+    horizon,
+    complete_horizon_count: 10,
+    positive_return_rate: 0.5,
+  }));
+  assert.deepEqual(historicalComparisonRows(rows).map((row) => row.horizon), [1, 3, 5, 10, 20]);
+});

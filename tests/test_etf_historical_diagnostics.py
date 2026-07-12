@@ -10,10 +10,15 @@ from superpower.skills.etf_rotation_strategy.contracts import (
     ShortEntryStatus,
 )
 from superpower.skills.etf_rotation_strategy.strategies.trend_pullback_v2.diagnostics import (
+    HORIZONS,
     diagnostic_events,
     diagnostic_trace,
     summarize_historical_diagnostics,
 )
+
+
+def test_historical_diagnostics_cover_short_and_medium_horizons() -> None:
+    assert HORIZONS == (1, 3, 5, 10, 20)
 
 
 def bars_for_returns(closes: list[float]) -> pd.DataFrame:
