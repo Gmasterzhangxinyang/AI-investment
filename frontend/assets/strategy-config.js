@@ -77,5 +77,51 @@
     return labels[key]?.[value] || value || "--";
   }
 
-  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, tableColumnClass, strategyStateLabel };
+  function historicalComparisonRows(rows) {
+    const groups = new Map();
+    (rows || [])
+      .filter((row) => row.state_type === "can_enter" && [5, 10, 20].includes(Number(row.horizon)))
+      .forEach((row) => {
+        const horizon = Number(row.horizon);
+        const key = `${row.strategy_id}|${horizon}`;
+        const current = groups.get(key) || {
+          strategy_id: row.strategy_id,
+          horizon,
+          event_count: 0,
+          complete_horizon_count: 0,
+          weighted_positive: 0,
+          weighted_return: 0,
+          weighted_adverse: 0,
+          false_reversal_10d_count: 0,
+        };
+        const complete = Number(row.complete_horizon_count || 0);
+        current.event_count += Number(row.event_count || 0);
+        current.complete_horizon_count += complete;
+        current.weighted_positive += Number(row.positive_return_rate || 0) * complete;
+        current.weighted_return += Number(row.mean_return || 0) * complete;
+        current.weighted_adverse += Number(row.mean_maximum_adverse_excursion || 0) * complete;
+        current.false_reversal_10d_count += Number(row.false_reversal_10d_count || 0);
+        groups.set(key, current);
+      });
+    return Array.from(groups.values())
+      .map((row) => {
+        const denominator = row.complete_horizon_count || 1;
+        return {
+          strategy_id: row.strategy_id,
+          horizon: row.horizon,
+          event_count: row.event_count,
+          complete_horizon_count: row.complete_horizon_count,
+          positive_return_rate: Number((row.weighted_positive / denominator).toFixed(12)),
+          mean_return: Number((row.weighted_return / denominator).toFixed(12)),
+          mean_maximum_adverse_excursion: Number((row.weighted_adverse / denominator).toFixed(12)),
+          false_reversal_10d_count: row.false_reversal_10d_count,
+          false_reversal_10d_rate: row.horizon === 10
+            ? Number((row.false_reversal_10d_count / denominator).toFixed(12))
+            : null,
+        };
+      })
+      .sort((left, right) => left.horizon - right.horizon || left.strategy_id.localeCompare(right.strategy_id));
+  }
+
+  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, tableColumnClass, strategyStateLabel, historicalComparisonRows };
 });

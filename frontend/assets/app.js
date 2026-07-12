@@ -1041,6 +1041,7 @@ function render() {
   renderTable("etf-buy-table", data.etfBuyCandidates || [], etfBuyColumns, "buy");
   renderTable("etf-sell-table", data.etfSellAlerts || [], etfSellColumns, "sell");
   renderTable("etf-watch-table", data.etfWatchlist || [], etfWatchColumns, "watch");
+  renderEtfHistoricalDiagnostics(data.etf?.historical_diagnostics || []);
   renderTable("etf-all-table", rankedEtfRows(data.etf?.all_signals || data.etfAllSignals || []), etfAllColumns);
   renderWatchlist(data.etfWatchlist || [], data.etfDetailHistory || []);
   renderTL(data.tlToday?.[0] || {});
@@ -1088,6 +1089,44 @@ function render() {
     ["metric_outputs", "输出合同"],
     ["duration_ms", "耗时ms"],
   ]);
+}
+
+function renderEtfHistoricalDiagnostics(rows) {
+  const comparison = ETFStrategyConfig.historicalComparisonRows(rows);
+  const strategyName = (strategyId) => strategyId === "trend_pullback_v2" ? "2.0 趋势回踩" : "原策略";
+  const percent = (value) => Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(2)}%` : "--";
+  const displayRows = comparison.map((row) => ({
+    strategy_name: strategyName(row.strategy_id),
+    horizon_text: `${row.horizon}日`,
+    sample_count: row.complete_horizon_count,
+    positive_rate_text: percent(row.positive_return_rate),
+    mean_return_text: percent(row.mean_return),
+    adverse_text: percent(row.mean_maximum_adverse_excursion),
+    false_reversal_text: row.horizon === 10
+      ? `${row.false_reversal_10d_count}（${percent(row.false_reversal_10d_rate)}）`
+      : "仅10日统计",
+  }));
+  renderTable("etf-history-table", displayRows, [
+    ["strategy_name", "策略"],
+    ["horizon_text", "观察周期"],
+    ["sample_count", "有效样本"],
+    ["positive_rate_text", "正收益比例"],
+    ["mean_return_text", "平均收益"],
+    ["adverse_text", "期间平均最大不利波动"],
+    ["false_reversal_text", "假反转次数"],
+  ]);
+  const highlights = document.getElementById("etf-history-highlights");
+  if (!highlights) return;
+  const tenDay = comparison.filter((row) => row.horizon === 10);
+  highlights.innerHTML = tenDay.length
+    ? tenDay.map((row) => `
+      <div class="history-highlight">
+        <span>${escapeHtml(strategyName(row.strategy_id))} · 10日</span>
+        <strong>${escapeHtml(percent(row.positive_return_rate))}</strong>
+        <small>正收益比例 · 样本 ${escapeHtml(row.complete_horizon_count)} · 最大不利波动 ${escapeHtml(percent(row.mean_maximum_adverse_excursion))} · 假反转 ${escapeHtml(row.false_reversal_10d_count)}（${escapeHtml(percent(row.false_reversal_10d_rate))}）</small>
+      </div>
+    `).join("")
+    : `<p class="plain-text">暂无完整历史诊断，请刷新数据后查看。</p>`;
 }
 
 function renderContext(summary) {

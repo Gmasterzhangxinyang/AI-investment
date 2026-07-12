@@ -2982,6 +2982,42 @@ body:not([data-view="chat"]) td {
   min-width: 1320px;
 }
 
+#etf-history-table {
+  min-width: 900px;
+}
+
+.history-highlight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.history-highlight {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid #e9e9e9;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.history-highlight span,
+.history-highlight small {
+  color: #727272;
+}
+
+.history-highlight strong {
+  font-size: 22px;
+  font-weight: 650;
+}
+
+@media (max-width: 760px) {
+  .history-highlight-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 th.long-text-column,
 td.long-text-column {
   width: 240px;

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, tableColumnClass, strategyStateLabel } = require("../../frontend/assets/strategy-config.js");
+const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, tableColumnClass, strategyStateLabel, historicalComparisonRows } = require("../../frontend/assets/strategy-config.js");
 
 test("deepMerge preserves dormant profiles and replaces arrays", () => {
   const current = { etf: { diagnostic_strategies: ["legacy_v1"], strategy_profiles: { future_v3: { kept: true } } } };
@@ -51,4 +51,21 @@ test("strategy state codes render as concise Chinese labels", () => {
   assert.equal(strategyStateLabel("medium_status", "trend_confirmed"), "趋势已确认");
   assert.equal(strategyStateLabel("short_entry_status", "overheated_do_not_chase"), "过热不追");
   assert.equal(strategyStateLabel("short_entry_status", "can_enter"), "可考虑入场");
+});
+
+test("historical comparison combines v2 entry routes with weighted metrics", () => {
+  const rows = historicalComparisonRows([
+    { strategy_id: "legacy_v1", state_type: "can_enter", entry_route: "", horizon: 10, event_count: 10, complete_horizon_count: 10, positive_return_rate: 0.5, mean_return: 0.02, mean_maximum_adverse_excursion: -0.03, false_reversal_10d_count: 5 },
+    { strategy_id: "trend_pullback_v2", state_type: "can_enter", entry_route: "breakout_confirmation", horizon: 10, event_count: 4, complete_horizon_count: 4, positive_return_rate: 0.75, mean_return: 0.03, mean_maximum_adverse_excursion: -0.02, false_reversal_10d_count: 1 },
+    { strategy_id: "trend_pullback_v2", state_type: "can_enter", entry_route: "pullback_confirmation", horizon: 10, event_count: 6, complete_horizon_count: 6, positive_return_rate: 0.5, mean_return: 0.01, mean_maximum_adverse_excursion: -0.04, false_reversal_10d_count: 3 },
+    { strategy_id: "trend_pullback_v2", state_type: "close_watch", entry_route: "", horizon: 10, event_count: 99, complete_horizon_count: 99, positive_return_rate: 1 },
+  ]);
+  assert.equal(rows.length, 2);
+  const v2 = rows.find((row) => row.strategy_id === "trend_pullback_v2");
+  assert.equal(v2.complete_horizon_count, 10);
+  assert.equal(v2.positive_return_rate, 0.6);
+  assert.equal(v2.mean_return, 0.018);
+  assert.equal(v2.mean_maximum_adverse_excursion, -0.032);
+  assert.equal(v2.false_reversal_10d_count, 4);
+  assert.equal(v2.false_reversal_10d_rate, 0.4);
 });
