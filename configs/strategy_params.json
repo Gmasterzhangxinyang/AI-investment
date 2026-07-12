@@ -52,7 +52,17 @@
     "weekly_kdj_lookback": 2,
     "weekly_j_low_threshold": 20,
     "macd_hist_min_delta": 0,
-    "weekly_no_trade_hard_veto": true
+    "weekly_no_trade_hard_veto": true,
+    "fund_flow": {
+      "light_threshold": 0.03,
+      "large_threshold": 0.05,
+      "extreme_threshold": 0.07,
+      "review_threshold": 0.2,
+      "rolling_days": 5,
+      "rolling_direction_threshold": 0.08,
+      "minimum_valid_days": 3,
+      "zero_stale_days": 3
+    }
   },
   "convertible_bond": {
     "price_limit": 140,
