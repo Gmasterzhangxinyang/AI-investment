@@ -22,7 +22,7 @@ Signals remain deterministic. LLM output can explain results but cannot change s
 | QAAgent | 数据质量 Agent | `data-quality-gate` | `data_quality_report` |
 | IndicatorAgent | 指标计算 Agent | `technical-indicators` | `etf_indicators`, `tl_indicators` |
 | PortfolioAgent | 组合状态 Agent | `portfolio-state-machine` | `positions` |
-| ETFAgent | ETF 轮动 Agent | `etf-rotation-strategy` | `etf_signal_table`, `etf_buy_candidates`, `etf_watchlist`, `etf_detail_history`, `etf_sell_alerts` |
+| ETFAgent | ETF 趋势筛选 Agent | `etf-rotation-strategy`（兼容性内部名称） | `etf_signal_table`, `etf_buy_candidates`, `etf_watchlist`, `etf_detail_history`, `etf_sell_alerts` |
 | TLAgent | TL 择时 Agent | `tl-timing-strategy` | `tl_today`, `tl_recent` |
 | ConvertibleBondAgent | 可转债性价比 Agent | `convertible-bond-ranking` | `cb_ranked`, `cb_top10` |
 | BacktestAgent | 历史诊断 Agent | `strategy-backtest` | `backtest_summary`, `backtest_trades` |

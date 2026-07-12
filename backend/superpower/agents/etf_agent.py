@@ -5,10 +5,10 @@ from superpower.runtime.agent import AgentSpec, SkillBackedAgent
 
 class ETFAgent(SkillBackedAgent):
     name = "etf-agent"
-    description = "Run ETF rotation strategy."
+    description = "Run the configured ETF trend screening strategy."
     success_message = "ETF策略运行完成"
     spec = AgentSpec(
-        role="ETF 轮动 Agent",
+        role="ETF 趋势筛选 Agent",
         objective="在客户未持仓/已平仓 ETF 中筛选建仓候选，在客户持仓 ETF 中筛选平仓提示，并给出排序评分。",
         skill_name="etf-rotation-strategy",
         required_artifacts=("skill_registry", "etf_indicators", "positions", "strategy_params"),
