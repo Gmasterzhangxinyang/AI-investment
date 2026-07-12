@@ -38,6 +38,8 @@ class Skill:
         cb_quality_summary = context.maybe("cb_quality_summary", {})
         backtest_summary = context.get("backtest_summary")
         backtest_trades = context.get("backtest_trades")
+        historical_diagnostics = context.maybe("etf_historical_diagnostics", pd.DataFrame())
+        historical_events = context.maybe("etf_historical_diagnostic_events", pd.DataFrame())
         backtest_next_day_checks = _recent_next_day_checks(
             context.maybe("backtest_next_day_checks", pd.DataFrame()),
             etf_indicators,
@@ -63,6 +65,9 @@ class Skill:
             "ETF详情近8日": etf_details,
             "ETF平仓提示": etf_sells,
             "ETF全量信号": etf_all,
+            "ETF策略状态说明": _etf_strategy_manual(context.maybe("etf_strategy_run", {})),
+            "ETF历史表现诊断": historical_diagnostics,
+            "ETF诊断事件": historical_events,
             "TL今日状态": tl_today,
             "TL近期状态": tl_recent,
             "可转债Top10": cb_top10,
@@ -136,6 +141,15 @@ class Skill:
                 safety_scan=safety_scan,
             )
         )
+        dashboard_payload["etf"].update(
+            {
+                "strategy": context.maybe("etf_strategy_run", {}),
+                "all_signals": records(etf_all),
+                "historical_diagnostics": records(historical_diagnostics),
+                "historical_diagnostic_events": records(historical_events, limit=1000),
+            }
+        )
+        dashboard_payload["run_info"]["etf_strategy"] = context.maybe("etf_strategy_run", {})
         market_indicators = _market_indicator_records(etf_indicators, tl_indicators)
         market_indicators_path = store.save_json("market_indicators", {"rows": market_indicators})
         dashboard_payload["marketIndicatorsPath"] = str(market_indicators_path)
@@ -242,6 +256,7 @@ def _stable_dashboard_schema(
             "warnings": run_warnings,
             "llm_enabled": bool(llm_usage.get("llm_used", False)),
             "disclaimer": DISCLAIMER,
+            "etf_strategy": context.maybe("etf_strategy_run", {}),
         },
         "data_quality": {
             "overall_status": quality_status,
@@ -260,6 +275,14 @@ def _stable_dashboard_schema(
                 "sell_alerts": len(etf_sells),
                 "all_signals": len(etf_all),
             },
+            "strategy": context.maybe("etf_strategy_run", {}),
+            "historical_diagnostics": records(
+                context.maybe("etf_historical_diagnostics", pd.DataFrame())
+            ),
+            "historical_diagnostic_events": records(
+                context.maybe("etf_historical_diagnostic_events", pd.DataFrame()),
+                limit=1000,
+            ),
             "buy_candidates": records(etf_buys),
             "watchlist": records(etf_watchlist),
             "sell_alerts": records(etf_sells),
@@ -546,6 +569,33 @@ def _normalise_market_indicators(frame: pd.DataFrame, asset_type: str, volume_fi
             "kdj_k": frame.get("kdj_k"),
             "kdj_d": frame.get("kdj_d"),
             "kdj_j": frame.get("kdj_j"),
+            "ma20_slope_5d": frame.get("ma20_slope_5d"),
+            "ma20_slope_state": frame.get("ma20_slope_state"),
+            "weekly_macd_hist": frame.get("weekly_macd_hist"),
+            "weekly_macd_state": frame.get("weekly_macd_state"),
+            "weekly_macd_preview": frame.get("weekly_macd_preview"),
+            "daily_macd_state": frame.get("daily_macd_state"),
         }
     )
     return out
+
+
+def _etf_strategy_manual(strategy: dict[str, Any]) -> pd.DataFrame:
+    strategy_id = str(strategy.get("strategy_id") or "legacy_v1")
+    rows = [
+        {"项目": "当前策略", "说明": strategy_id},
+        {"项目": "版本", "说明": strategy.get("strategy_version", "")},
+        {"项目": "配置指纹", "说明": strategy.get("config_hash", "")},
+    ]
+    if strategy_id == "trend_pullback_v2":
+        rows.extend(
+            [
+                {"项目": "中期趋势", "说明": "MA20斜率、价格与均线结构、周MACD和日MACD共同确认；MA20向下或周MACD绿柱扩大时不参与。"},
+                {"项目": "密切观察", "说明": "MA5已在MA10上方，日MACD绿柱缩小或转红；同时提示周MACD与MA20走平情况。"},
+                {"项目": "短期入场", "说明": "中期确认后等待突破或缩量回踩承接；巨量长阳过热时不追，进入冷却。"},
+            ]
+        )
+    else:
+        rows.append({"项目": "规则", "说明": "保留原有MA5/MA10、MACD与量能共振规则；中期趋势状态不适用。"})
+    rows.append({"项目": "边界", "说明": "所有状态均为规则筛选和历史表现诊断，不承诺收益，不等于自动交易指令。"})
+    return pd.DataFrame(rows)

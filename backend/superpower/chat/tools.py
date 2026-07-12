@@ -449,6 +449,15 @@ class ResearchToolbox:
             "volume_ratio_60": row.get("vol_ratio60") or row.get("volume_ratio_60"),
             "macd_hist": row.get("macd_hist"),
             "reason": row.get("signal_reason") or row.get("reason") or row.get("missing_condition"),
+            "strategy_id": row.get("strategy_id"),
+            "strategy_version": row.get("strategy_version"),
+            "medium_status": row.get("medium_status"),
+            "medium_reason": row.get("medium_reason"),
+            "short_entry_status": row.get("short_entry_status"),
+            "short_entry_reason": row.get("short_entry_reason"),
+            "weekly_macd_confirmation_check": row.get("weekly_macd_confirmation_check"),
+            "ma20_flat_check": row.get("ma20_flat_check"),
+            "risk_notes": row.get("risk_notes"),
         }
 
     def _compact_cb_row(self, row: dict[str, Any]) -> dict[str, Any]:

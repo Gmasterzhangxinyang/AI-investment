@@ -44,6 +44,13 @@ def write_research_pdf(root_dir: Path, dashboard: dict[str, Any]) -> Path:
     story.append(Paragraph("AI 投研日报", styles["TitleCn"]))
     story.append(Paragraph(f"报告日期：{report_date}", styles["Muted"]))
     story.append(Paragraph(DISCLAIMER, styles["Muted"]))
+    strategy = (dashboard.get("etf") or {}).get("strategy") or (dashboard.get("run_info") or {}).get("etf_strategy") or {}
+    story.append(
+        Paragraph(
+            f"ETF策略：{escape(str(strategy.get('strategy_id', '--')))} · v{escape(str(strategy.get('strategy_version', '--')))} · 配置指纹 {escape(str(strategy.get('config_hash', '--')))[:12]}",
+            styles["Muted"],
+        )
+    )
     story.append(Spacer(1, 7 * mm))
 
     story.append(Paragraph("今日总览", styles["Section"]))
@@ -63,6 +70,8 @@ def write_research_pdf(root_dir: Path, dashboard: dict[str, Any]) -> Path:
             [
                 ("name", "标的"),
                 ("code", "代码"),
+                ("medium_status", "中期趋势状态"),
+                ("short_entry_status", "短期入场状态"),
                 ("close", "收盘"),
                 ("vol_ratio60", "量能倍数"),
                 ("score", "评分"),
@@ -80,6 +89,8 @@ def write_research_pdf(root_dir: Path, dashboard: dict[str, Any]) -> Path:
             [
                 ("name", "标的"),
                 ("code", "代码"),
+                ("medium_status", "中期趋势状态"),
+                ("short_entry_status", "短期入场状态"),
                 ("watch_type", "关注类型"),
                 ("vol_ratio60", "量能倍数"),
                 ("score", "评分"),
@@ -97,6 +108,8 @@ def write_research_pdf(root_dir: Path, dashboard: dict[str, Any]) -> Path:
             [
                 ("name", "标的"),
                 ("code", "代码"),
+                ("medium_status", "中期趋势状态"),
+                ("short_entry_status", "短期入场状态"),
                 ("close", "收盘"),
                 ("vol_ratio60", "量能倍数"),
                 ("score", "评分"),

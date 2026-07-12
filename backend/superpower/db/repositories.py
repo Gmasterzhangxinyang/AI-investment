@@ -284,6 +284,9 @@ class DatabaseRepository:
             detail["marketHistory"] = self.get_market_history(code, limit=history_limit)
             if asset_type == "ETF":
                 latest = detail["latestMarketBar"] or self.get_etf_latest_bar(code)
+                if latest and isinstance(latest.get("payload_json"), dict):
+                    latest = {**latest, **latest["payload_json"]}
+                detail["latestMarketBar"] = latest
                 detail["signals"] = self.get_etf_signals(code, latest.get("trade_date") if latest else None)
             if asset_type == "TL":
                 detail["tlState"] = self.get_tl_state()

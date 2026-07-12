@@ -9,6 +9,8 @@ RULEBOOK = [
     "ETF 关注池只表示趋势或MACD接近确认但条件不完整，尤其量能未确认时不得说成买入或建仓。",
     "ETF 平仓提示只针对用户持有仓位；条件为收盘跌破MA10且放量，或收盘跌破MA5且明显放量。若当前持仓为空，应说明无持仓侧平仓提示。",
     "ETF 规则解释必须使用 MA5/MA10、MA5/MA20、成交量相对前60个交易日均量倍数、DIF/DEA、MACD柱、触发原因和 score 等字段；不得用主观强弱代替规则。",
+    "ETF 趋势回踩策略必须同时解释中期趋势状态和短期入场状态。MA5高于MA10且日MACD绿柱缩小或转红只能列入密切观察，并提示周MACD是否改善、MA20是否走平。",
+    "ETF 趋势回踩策略遇到长期下跌后的巨量长阳不得直接追入；中期确认后仍需突破或回踩承接，close_watch只是观察，can_enter也不代表保证收益。",
     "TL 只输出日频状态：不做交易、关注交易、模型触发建仓候选。30年国债期货 TL 不做平仓提示。",
     "TL 不做交易条件：周线层面红柱T日短于T-1日、绿柱T日长于T-1日，或红转绿阶段。",
     "TL 关注条件：周线层面红柱T日长于T-1日、绿柱T日短于T-1日，或绿转红阶段；日线MACD柱改善也只能形成关注或辅助判断。",
@@ -23,13 +25,13 @@ RULEBOOK = [
 
 
 def rules_for_intent(intent_name: str) -> list[str]:
-    common = [RULEBOOK[0], RULEBOOK[15], RULEBOOK[16]]
+    common = [RULEBOOK[0], RULEBOOK[17], RULEBOOK[18]]
     if intent_name.startswith("etf"):
-        return common + RULEBOOK[1:7]
+        return common + RULEBOOK[1:9]
     if intent_name.startswith("tl"):
-        return common + RULEBOOK[7:13]
+        return common + RULEBOOK[9:15]
     if intent_name.startswith("convertible"):
-        return common + RULEBOOK[13:15]
+        return common + RULEBOOK[15:17]
     if intent_name in {"asset_list", "database_inventory"}:
         return common + [
             "数据库盘点问题必须优先使用 SQLite asset_master 和表行数；不得只列关注池。",

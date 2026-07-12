@@ -33,6 +33,9 @@ class ReportAgent(SkillBackedAgent):
             "data_quality_report",
             "risk_summary",
             "research_summary",
+            "etf_strategy_run",
+            "etf_historical_diagnostics",
+            "etf_historical_diagnostic_events",
         ),
         produced_artifacts=("report_path", "dashboard_json_path", "market_indicators_json_path"),
         quality_gates=(

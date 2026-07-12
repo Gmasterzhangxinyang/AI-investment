@@ -454,6 +454,14 @@ class ChatOrchestrator:
 
         lines = [
             f"结论：{name}（{code}）截至 {trade_date} 的今日判断是：{action}。",
+            (
+                f"策略状态：{dashboard_signal.get('strategy_id') or '--'} · v{dashboard_signal.get('strategy_version') or '--'}；"
+                f"中期趋势 {dashboard_signal.get('medium_status') or '--'}；短期入场 {dashboard_signal.get('short_entry_status') or '--'}。"
+            ),
+            (
+                f"中短期证据：周MACD确认 {dashboard_signal.get('weekly_macd_confirmation_check') or '--'}；"
+                f"MA20走平检查 {dashboard_signal.get('ma20_flat_check') or '--'}。"
+            ),
             f"持仓路径：系统当前把它识别为“{position_status}”。持仓中才检查平仓提示；空仓或已平仓才检查建仓候选和关注池。",
             (
                 f"今日指标：收盘 {close}，MA5 {ma5}，MA10 {ma10}，MA20 {ma20}，MA60 {ma60}，"
@@ -463,9 +471,12 @@ class ChatOrchestrator:
         ]
         if watch_type:
             lines.append(f"关注状态：{watch_type}。这只是观察池，不等于建仓候选。")
+        if dashboard_signal.get("risk_notes"):
+            lines.append(f"风险提示：{dashboard_signal.get('risk_notes')}")
         if recent_line:
             lines.append(recent_line)
         lines.append(f"规则动作提示：{suggestion}")
+        lines.append("边界：以上是确定性规则状态和历史证据解释，不保证收益，也不构成自动交易指令。")
         lines.append("来源：最新 dashboard.etf.all_signals、SQLite 日频指标、configs/strategy_params.json。")
         return "\n\n".join(lines)
 

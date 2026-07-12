@@ -49,7 +49,7 @@ def ingest_dashboard(root_dir: Path, run_id: str, dashboard_path: Path) -> dict[
             _upsert_daily_report(connection, run_id, normalized_report_date, dashboard_path, dashboard)
             _upsert_summary(connection, normalized_report_date, dashboard.get("summary", []))
             _upsert_market_indicators(connection, _load_market_indicator_rows(dashboard))
-            _upsert_etf_bars(connection, dashboard.get("etfDetailHistory", []))
+            _upsert_etf_bars(connection, _etf_bar_rows(dashboard))
             _upsert_etf_signals(connection, dashboard)
             _upsert_tl_signals(connection, dashboard.get("tlToday", []) + dashboard.get("tlRecent", []))
             _upsert_convertibles(connection, normalized_report_date, dashboard.get("cbRanked", []) or dashboard.get("cbTop10", []))
@@ -107,7 +107,19 @@ def _load_market_indicator_rows(dashboard: dict[str, Any]) -> list[dict[str, Any
         return []
     payload = json.loads(path.read_text(encoding="utf-8"))
     rows = payload.get("rows", [])
-    return rows if isinstance(rows, list) else []
+    if not isinstance(rows, list):
+        return []
+    canonical = {
+        (str(row.get("code")), _fmt_date(row.get("date") or dashboard.get("reportDate"))): row
+        for row in (dashboard.get("etf", {}).get("all_signals") or [])
+        if row.get("code")
+    }
+    return [
+        {**row, **canonical.get((str(row.get("code")), _fmt_date(row.get("date"))), {})}
+        if str(row.get("asset_type")) == "ETF"
+        else row
+        for row in rows
+    ]
 
 
 def _upsert_assets(connection: Any, dashboard: dict[str, Any], report_date: str) -> None:
@@ -116,6 +128,9 @@ def _upsert_assets(connection: Any, dashboard: dict[str, Any], report_date: str)
         for row in dashboard.get(key, []):
             if row.get("code"):
                 rows.append((str(row["code"]), str(row.get("name", row["code"])), "ETF"))
+    for row in dashboard.get("etf", {}).get("all_signals", []):
+        if row.get("code"):
+            rows.append((str(row["code"]), str(row.get("name", row["code"])), "ETF"))
     for row in dashboard.get("tlToday", []) + dashboard.get("tlRecent", []):
         if row.get("code"):
             rows.append((str(row["code"]), str(row.get("name", row["code"])), "TL"))
@@ -221,6 +236,24 @@ def _upsert_etf_bars(connection: Any, rows: list[dict[str, Any]]) -> None:
                 _json(row),
             ),
         )
+
+
+def _etf_bar_rows(dashboard: dict[str, Any]) -> list[dict[str, Any]]:
+    details = [dict(row) for row in dashboard.get("etfDetailHistory", [])]
+    canonical = dashboard.get("etf", {}).get("all_signals", [])
+    by_key = {
+        (str(row.get("code")), _fmt_date(row.get("date"))): row
+        for row in details
+        if row.get("code")
+    }
+    for signal in canonical:
+        code = str(signal.get("code") or "")
+        date = _fmt_date(signal.get("date") or dashboard.get("reportDate"))
+        if not code or not date:
+            continue
+        key = (code, date)
+        by_key[key] = {**by_key.get(key, {}), **signal, "date": date}
+    return list(by_key.values())
 
 
 def _upsert_market_indicators(connection: Any, rows: list[dict[str, Any]]) -> None:

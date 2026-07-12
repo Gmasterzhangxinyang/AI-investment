@@ -16,6 +16,16 @@ from superpower.skills.report_generation.handler import _stable_dashboard_schema
 
 def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
     context = AgentContext(run_id="test_run", root_dir=ROOT)
+    context.put(
+        "etf_strategy_run",
+        {
+            "strategy_id": "trend_pullback_v2",
+            "strategy_version": "2.0.0",
+            "config_hash": "a" * 64,
+        },
+    )
+    context.put("etf_historical_diagnostics", pd.DataFrame([{"strategy_id": "trend_pullback_v2", "horizon": 10}]))
+    context.put("etf_historical_diagnostic_events", pd.DataFrame([{"strategy_id": "trend_pullback_v2", "state_type": "can_enter"}]))
     quality = pd.DataFrame([{"item": "ETF行情行数", "status": "ERROR", "detail": 0, "note": ""}])
     dashboard = pd.DataFrame([{"item": "ETF建仓候选数量", "value": 0}, {"item": "ETF关注池数量", "value": 0}, {"item": "TL今日状态", "value": "数据不足，无法判断"}, {"item": "可转债Top10数量", "value": 0}])
 
@@ -56,3 +66,8 @@ def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
     assert "risk_watch" in payload["convertible_bond"]
     assert "summary" in payload["convertible_bond"]
     assert "key_points" in payload["report_summary"]
+    assert payload["etf"]["strategy"]["strategy_id"] == "trend_pullback_v2"
+    assert payload["etf"]["strategy"]["strategy_version"] == "2.0.0"
+    assert len(payload["etf"]["strategy"]["config_hash"]) == 64
+    assert payload["etf"]["historical_diagnostics"]
+    assert payload["etf"]["historical_diagnostic_events"]
