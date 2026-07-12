@@ -558,6 +558,7 @@ def _normalise_market_indicators(frame: pd.DataFrame, asset_type: str, volume_fi
             "amount": frame.get("成交额（亿元）", frame.get("成交额")),
             "open_interest": frame.get("持仓量"),
             "open_interest_change": frame.get("持仓量变化"),
+            "fund_share_change": frame.get("份额变化（亿份）"),
             "ma5": frame.get("ma5"),
             "ma10": frame.get("ma10"),
             "ma20": frame.get("ma20"),

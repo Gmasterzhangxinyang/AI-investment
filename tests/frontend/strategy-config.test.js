@@ -51,6 +51,7 @@ test("ETF explanation columns receive a wrapping class", () => {
   assert.equal(tableColumnClass("signal_reason"), "long-text-column");
   assert.equal(tableColumnClass("suggested_action"), "long-text-column");
   assert.equal(tableColumnClass("risk_overlay_summary"), "long-text-column");
+  assert.equal(tableColumnClass("fund_flow_note"), "long-text-column");
   assert.equal(tableColumnClass("score"), "");
 });
 

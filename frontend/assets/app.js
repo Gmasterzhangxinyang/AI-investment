@@ -1012,6 +1012,9 @@ function render() {
   const tlRecentColumns = [
     ["date", "日期"],
     ["state", "状态"],
+    ["fund_share_change_daily", "ETF当日份额"],
+    ["fund_share_5d_sum", "ETF近5日累计"],
+    ["fund_flow_relation", "资金关系"],
     ["daily_macd_reason", "日线MACD"],
     ["daily_kdj_threshold_check", "日线KDJ"],
     ["weekly_macd_reason", "周线MACD"],
@@ -1239,7 +1242,7 @@ function renderDailyWorkbench(data, summary) {
     {
       title: "TL",
       state: tl.state || "--",
-      body: `${tl.reason || "暂无规则原因"}。日线：${tl.daily_macd_reason || "--"}；周线：${tl.weekly_macd_reason || "--"}。`,
+      body: `${tl.reason || "暂无规则原因"}。资金辅助：${tl.fund_flow_relation || "数据不足"}；${tl.fund_flow_note || "暂无份额数据"}。`,
       href: "#tl",
     },
     {
@@ -1511,6 +1514,11 @@ function renderTL(row) {
     ["日线KDJ条件", row.daily_kdj_threshold_check],
     ["日线关注", row.daily_attention ? "是" : "否"],
     ["日线KDJ反弹", row.daily_kdj_rebound ? "是" : "否"],
+    ["ETF当日份额变化（亿份）", row.fund_share_change_daily],
+    ["ETF当日资金等级", row.fund_share_daily_level],
+    ["ETF近5日累计（亿份）", row.fund_share_5d_sum],
+    ["ETF资金关系", row.fund_flow_relation],
+    ["ETF资金提示", row.fund_flow_note],
   ];
   document.getElementById("tl-metrics").innerHTML = metrics
     .map((item) => `<div><dt>${escapeHtml(item[0])}</dt><dd>${escapeHtml(formatNumber(item[1]))}</dd></div>`)
@@ -1528,6 +1536,11 @@ function renderTLPanel(row) {
     ["日线KDJ", row.daily_kdj_threshold_check],
     ["周线MACD", row.weekly_macd_reason],
     ["周线KDJ", row.weekly_kdj_threshold_check],
+    ["ETF当日份额变化（亿份）", row.fund_share_change_daily],
+    ["ETF当日资金等级", row.fund_share_daily_level],
+    ["ETF近5日累计（亿份）", row.fund_share_5d_sum],
+    ["ETF资金关系", row.fund_flow_relation],
+    ["资金辅助提示", row.fund_flow_note],
     ["说明", "当前TL第一版只做状态诊断，不模拟平仓收益"],
   ];
   metricsNode.innerHTML = metrics
@@ -2125,6 +2138,7 @@ function localTlAnswer(question) {
     `今日指标：收盘 ${formatNumber(row["收盘价"])}，MA5 ${formatNumber(row.ma5)}，MA10 ${formatNumber(row.ma10)}，MA20 ${formatNumber(row.ma20)}，MA60 ${formatNumber(row.ma60)}，量能倍数 ${formatNumber(row.vol_ratio60)}。`,
     `日线证据：MACD柱 ${formatNumber(row.macd_hist)}，KDJ J ${formatNumber(row.kdj_j)}；日线MACD判断：${row.daily_macd_reason || "--"}；日线KDJ检查：${row.daily_kdj_threshold_check || "--"}`,
     `周线证据：MACD柱 ${formatNumber(row.week_macd_hist)}，KDJ J ${formatNumber(row.week_kdj_j)}；周线MACD判断：${row.weekly_macd_reason || "--"}；周线KDJ检查：${row.weekly_kdj_threshold_check || "--"}`,
+    `资金辅助：当日份额变化 ${formatNumber(row.fund_share_change_daily)} 亿份（${row.fund_share_daily_level || "数据不足"}），近5日累计 ${formatNumber(row.fund_share_5d_sum)} 亿份；${row.fund_flow_note || "份额变化数据不足，不影响原TL状态"}`,
     `规则结论：${row.reason || "--"}`,
     row.rule_hits ? `规则命中：${row.rule_hits}` : "",
     `动作提示：${row.no_trade_signal ? "当前属于不做交易路径；周线不做交易或KDJ低位反弹条件不满足时，日线改善不能单独升级为建仓。" : row.attention_signal ? "当前属于关注交易路径；继续观察日线/周线KDJ低位反弹条件是否补齐。" : "当前未触发明确建仓候选。"}`,

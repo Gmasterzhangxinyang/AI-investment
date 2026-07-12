@@ -51,7 +51,7 @@
   }
 
   function tableColumnClass(key) {
-    return ["signal_reason", "watch_type", "missing_condition", "suggested_action", "decision_reason", "risk_overlay_summary"].includes(key)
+    return ["signal_reason", "watch_type", "missing_condition", "suggested_action", "decision_reason", "risk_overlay_summary", "fund_flow_note"].includes(key)
       ? "long-text-column"
       : "";
   }

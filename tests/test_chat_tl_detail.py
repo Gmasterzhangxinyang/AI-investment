@@ -50,6 +50,12 @@ def test_tl_answer_uses_daily_and_weekly_rule_evidence() -> None:
                             "reason": "红柱T日短于T-1日；日线KDJ低位反弹条件不满足",
                             "rule_hits": "满足TL不做交易规则",
                             "risk_notes": "TL 当前仅做状态诊断，不模拟期货连续合约、换月、杠杆、保证金、滑点和完整平仓收益。",
+                            "fund_share_change_daily": 0.0227,
+                            "fund_share_daily_level": "正常波动",
+                            "fund_share_5d_sum": 0.085,
+                            "fund_flow_state": "持续流入",
+                            "fund_flow_relation": "逆势流入",
+                            "fund_flow_note": "逆势流入：TL技术偏弱但ETF资金持续流入，仅观察潜在转向；不影响原TL状态",
                         }
                     ],
                     "recent": [],
@@ -66,3 +72,6 @@ def test_tl_answer_uses_daily_and_weekly_rule_evidence() -> None:
     assert "周线证据" in answer
     assert "红柱T日短于T-1日" in answer
     assert "当前属于不做交易路径" in answer
+    assert "资金辅助" in answer
+    assert "近5日累计 0.085" in answer
+    assert "逆势流入" in answer

@@ -11,7 +11,10 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from superpower.runtime import AgentContext
-from superpower.skills.report_generation.handler import _stable_dashboard_schema
+from superpower.skills.report_generation.handler import (
+    _normalise_market_indicators,
+    _stable_dashboard_schema,
+)
 
 
 def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
@@ -82,3 +85,22 @@ def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
     assert payload["etf"]["historical_diagnostic_events"]
     assert payload["etf"]["all_signals"][0]["risk_overlay_level"] == "caution"
     assert "不改变原策略评分和排名" in payload["etf"]["all_signals"][0]["risk_overlay_summary"]
+
+
+def test_tl_market_payload_preserves_fund_share_change() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp("2026-07-09"),
+                "code": "TL.CFE",
+                "name": "30年国债期货TL",
+                "收盘价": 113.86,
+                "成交量": 1000,
+                "份额变化（亿份）": 0.0802,
+            }
+        ]
+    )
+
+    result = _normalise_market_indicators(frame, asset_type="TL", volume_field="成交量")
+
+    assert result.iloc[0]["fund_share_change"] == 0.0802

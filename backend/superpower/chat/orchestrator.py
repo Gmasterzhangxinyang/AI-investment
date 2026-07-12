@@ -596,6 +596,7 @@ class ChatOrchestrator:
         reason = str(row.get("reason") or "--")
         rule_hits = str(row.get("rule_hits") or "")
         risk_notes = str(row.get("risk_notes") or "")
+        fund_flow_note = str(row.get("fund_flow_note") or "")
         action_hint = self._tl_action_hint(row)
 
         lines = [
@@ -605,6 +606,12 @@ class ChatOrchestrator:
             f"周线证据：MACD柱 {weekly_macd}，KDJ J {weekly_j}；周线MACD判断：{weekly_macd_reason}；周线KDJ检查：{weekly_kdj_check}",
             f"规则结论：{reason}",
         ]
+        if fund_flow_note:
+            lines.append(
+                "资金辅助：当日份额变化 "
+                f"{self._fmt_metric(row.get('fund_share_change_daily'))} 亿份（{row.get('fund_share_daily_level') or '--'}），"
+                f"近5日累计 {self._fmt_metric(row.get('fund_share_5d_sum'))} 亿份；{fund_flow_note}"
+            )
         if rule_hits:
             lines.append(f"规则命中：{rule_hits}")
         lines.append(f"动作提示：{action_hint}")
