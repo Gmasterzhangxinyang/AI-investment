@@ -457,6 +457,11 @@ class ResearchToolbox:
             "short_entry_reason": row.get("short_entry_reason"),
             "weekly_macd_confirmation_check": row.get("weekly_macd_confirmation_check"),
             "ma20_flat_check": row.get("ma20_flat_check"),
+            "risk_overlay_level": row.get("risk_overlay_level"),
+            "risk_overlay_summary": row.get("risk_overlay_summary"),
+            "risk_overlay_flags": row.get("risk_overlay_flags"),
+            "risk_overlay_ma20_state": row.get("risk_overlay_ma20_state"),
+            "risk_overlay_weekly_macd_state": row.get("risk_overlay_weekly_macd_state"),
             "risk_notes": row.get("risk_notes"),
         }
 

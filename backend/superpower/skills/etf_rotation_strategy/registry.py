@@ -56,7 +56,7 @@ def default_registry() -> ETFStrategyRegistry:
     registry.register(
         ETFStrategyMetadata(
             strategy_id="trend_pullback_v2",
-            display_name="趋势回踩策略",
+            display_name="趋势回踩策略（实验）",
             version="2.0.0",
             default_params=DEFAULT_PROFILE,
             parameter_schema=PARAMETER_SCHEMA,

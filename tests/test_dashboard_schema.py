@@ -37,7 +37,16 @@ def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
         etf_buys=pd.DataFrame(),
         etf_watchlist=pd.DataFrame(),
         etf_sells=pd.DataFrame(),
-        etf_all=pd.DataFrame(),
+        etf_all=pd.DataFrame(
+            [
+                {
+                    "code": "510001.SH",
+                    "strategy_id": "legacy_v1",
+                    "risk_overlay_level": "caution",
+                    "risk_overlay_summary": "MA20仍向下；仅作风险辅助，不改变原策略评分和排名",
+                }
+            ]
+        ),
         tl_today=pd.DataFrame(),
         tl_recent=pd.DataFrame(),
         cb_top10=pd.DataFrame(),
@@ -71,3 +80,5 @@ def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
     assert len(payload["etf"]["strategy"]["config_hash"]) == 64
     assert payload["etf"]["historical_diagnostics"]
     assert payload["etf"]["historical_diagnostic_events"]
+    assert payload["etf"]["all_signals"][0]["risk_overlay_level"] == "caution"
+    assert "不改变原策略评分和排名" in payload["etf"]["all_signals"][0]["risk_overlay_summary"]

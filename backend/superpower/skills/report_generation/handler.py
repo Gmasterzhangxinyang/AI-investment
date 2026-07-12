@@ -596,6 +596,11 @@ def _etf_strategy_manual(strategy: dict[str, Any]) -> pd.DataFrame:
             ]
         )
     else:
-        rows.append({"项目": "规则", "说明": "保留原有MA5/MA10、MACD与量能共振规则；中期趋势状态不适用。"})
+        rows.extend(
+            [
+                {"项目": "规则", "说明": "保留原有MA5/MA10、MACD与量能共振规则；中期趋势状态不适用。"},
+                {"项目": "风险辅助", "说明": "MA20、周MACD、短期过热和假反转只作提示，不改变原策略候选、评分和排名。"},
+            ]
+        )
     rows.append({"项目": "边界", "说明": "所有状态均为规则筛选和历史表现诊断，不承诺收益，不等于自动交易指令。"})
     return pd.DataFrame(rows)

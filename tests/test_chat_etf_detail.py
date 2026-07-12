@@ -114,6 +114,8 @@ def test_single_etf_answer_uses_rule_evidence_from_dashboard_signal() -> None:
                         "ma5_ma20_status": "MA5高于MA20（增强项）",
                         "volume_check": "前60日均量倍数1.4742，阈值1.1，达标",
                         "signal_reason": "未触发建仓候选：规则A缺MA5今日未上穿MA10；规则B缺DIF今日未上穿DEA",
+                        "risk_overlay_level": "caution",
+                        "risk_overlay_summary": "MA20仍向下；仅作风险辅助，不改变原策略评分和排名",
                     },
                     "latest_bar": {},
                     "history": [
@@ -130,4 +132,6 @@ def test_single_etf_answer_uses_rule_evidence_from_dashboard_signal() -> None:
     assert "今日判断是：未触发" in answer
     assert "量能倍数 1.4742" in answer
     assert "规则A缺MA5今日未上穿MA10" in answer
+    assert "风险辅助：MA20仍向下" in answer
+    assert "不改变原策略评分和排名" in answer
     assert "来源：最新 dashboard.etf.all_signals" in answer

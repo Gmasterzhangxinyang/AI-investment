@@ -78,6 +78,7 @@ def test_default_registry_exposes_legacy_strategy() -> None:
 
     assert registry.create("legacy_v1").strategy_id == "legacy_v1"
     assert registry.get_metadata("legacy_v1").display_name == "原始策略"
+    assert registry.get_metadata("trend_pullback_v2").display_name == "趋势回踩策略（实验）"
 
 
 def test_explicit_legacy_selection_adds_canonical_identity() -> None:

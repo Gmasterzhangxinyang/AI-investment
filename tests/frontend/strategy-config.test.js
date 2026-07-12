@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, tableColumnClass, strategyStateLabel, historicalComparisonRows } = require("../../frontend/assets/strategy-config.js");
+const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, tableColumnClass, strategyStateLabel, historicalComparisonRows } = require("../../frontend/assets/strategy-config.js");
 
 test("deepMerge preserves dormant profiles and replaces arrays", () => {
   const current = { etf: { diagnostic_strategies: ["legacy_v1"], strategy_profiles: { future_v3: { kept: true } } } };
@@ -40,10 +40,17 @@ test("medium and short state columns only show for generated v2 results", () => 
   assert.equal(showV2StateColumns(null), false);
 });
 
+test("legacy result shows risk overlay while v2 keeps its own state columns", () => {
+  assert.equal(showLegacyRiskOverlay({ strategy_id: "legacy_v1", strategy_version: "1.0.0" }), true);
+  assert.equal(showLegacyRiskOverlay({ strategy_id: "trend_pullback_v2", strategy_version: "2.0.0" }), false);
+  assert.equal(showLegacyRiskOverlay(null), false);
+});
+
 test("ETF explanation columns receive a wrapping class", () => {
   assert.equal(tableColumnClass("watch_type"), "long-text-column");
   assert.equal(tableColumnClass("signal_reason"), "long-text-column");
   assert.equal(tableColumnClass("suggested_action"), "long-text-column");
+  assert.equal(tableColumnClass("risk_overlay_summary"), "long-text-column");
   assert.equal(tableColumnClass("score"), "");
 });
 

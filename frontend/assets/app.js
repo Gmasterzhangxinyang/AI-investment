@@ -957,6 +957,9 @@ function render() {
   const etfStateColumns = ETFStrategyConfig.showV2StateColumns(generatedEtfStrategy)
     ? [["medium_status", "中期趋势"], ["short_entry_status", "短期入场"]]
     : [];
+  const etfRiskColumns = ETFStrategyConfig.showLegacyRiskOverlay(generatedEtfStrategy)
+    ? [["risk_overlay_summary", "风险辅助"]]
+    : [];
   document.getElementById("report-date").textContent = data.reportDate || "--";
   document.getElementById("rail-date").textContent = data.reportDate ? `日期 ${data.reportDate}` : "--";
   document.getElementById("report-link").href = data.reportPath ? reportUrl(data.reportPath) : "#";
@@ -970,6 +973,7 @@ function render() {
     ...etfStateColumns,
     ["close", "收盘"],
     ["score", "评分"],
+    ...etfRiskColumns,
     ["signal_reason", "触发原因"],
   ];
   const etfSellColumns = [
@@ -978,6 +982,7 @@ function render() {
     ...etfStateColumns,
     ["close", "收盘"],
     ["score", "评分"],
+    ...etfRiskColumns,
     ["signal_reason", "触发原因"],
   ];
   const etfWatchColumns = [
@@ -985,6 +990,7 @@ function render() {
     ["code", "代码"],
     ...etfStateColumns,
     ["close", "收盘"],
+    ...etfRiskColumns,
     ["watch_type", "关注原因"],
     ["suggested_action", "下一步"],
   ];
@@ -996,6 +1002,7 @@ function render() {
     ...etfStateColumns,
     ["display_action", "触发状态"],
     ["score", "强弱分"],
+    ...etfRiskColumns,
     ["close", "收盘"],
     ["ma5_ma10_signal", "MA5/MA10"],
     ["ma5_ma20_status", "MA5/MA20"],

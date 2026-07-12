@@ -471,6 +471,8 @@ class ChatOrchestrator:
         ]
         if watch_type:
             lines.append(f"关注状态：{watch_type}。这只是观察池，不等于建仓候选。")
+        if dashboard_signal.get("risk_overlay_summary"):
+            lines.append(f"风险辅助：{dashboard_signal.get('risk_overlay_summary')}")
         if dashboard_signal.get("risk_notes"):
             lines.append(f"风险提示：{dashboard_signal.get('risk_notes')}")
         if recent_line:
