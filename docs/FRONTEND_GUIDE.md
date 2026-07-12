@@ -67,3 +67,8 @@ Frontend refresh follows the same degradation rule as the CLI:
 - table-first investment workflow
 - no marketing landing page
 - no decorative background effects
+# ETF 策略切换
+
+操作路径：`策略参数 → ETF策略 → 选择策略 → 保存 → 刷新数据`。
+
+“已保存，待刷新后生效”表示配置已保存，但当前页面仍是上一次成功生成的结果。刷新成功后，ETF 表格同时显示“中期趋势状态”和“短期入场状态”；刷新失败时保留上一次成功结果。

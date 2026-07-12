@@ -158,3 +158,6 @@ high | medium | low
   "convertible_bond": {"top10": [], "candidates": [], "excluded": [], "warnings": ["可转债文件不存在"]}
 }
 ```
+# ETF 策略状态扩展
+
+`etf.strategy` 记录 `strategy_id`、`strategy_version` 和 `config_hash`。`etf.all_signals` 的每行同时包含 `medium_status` 与 `short_entry_status`。`etf.historical_diagnostics` 是 5/10/20 日历史表现描述，不是 P&L 回测或收益承诺。

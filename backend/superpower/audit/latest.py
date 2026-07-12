@@ -12,6 +12,8 @@ import pandas as pd
 
 from superpower.skills.convertible_bond_ranking.handler import rank_convertible_bonds, split_candidate_qualification
 from superpower.skills.etf_rotation_strategy.handler import latest_etf_signals
+from superpower.skills.etf_rotation_strategy.config import normalize_etf_config
+from superpower.skills.technical_indicators.etf import add_etf_indicators
 from superpower.skills.technical_indicators.handler import add_indicators
 from superpower.skills.tl_timing_strategy.handler import tl_state
 from superpower.tools.excel_reader import (
@@ -69,10 +71,7 @@ def audit_latest(root_dir: Path, etf_file: Path, tl_file: Path, cb_file: Path | 
     if positions.empty and positions_path.exists():
         positions = pd.read_csv(positions_path)
 
-    etf_indicators = pd.concat(
-        [add_indicators(group, "成交量（万股）") for _, group in etf_raw.groupby(["name", "code"])],
-        ignore_index=True,
-    )
+    etf_indicators = _add_etf_audit_indicators(etf_raw, params)
     tl_indicators = add_indicators(tl_raw, "成交量").sort_values("date").reset_index(drop=True)
     etf_all, etf_buys, etf_sells, etf_watchlist, etf_details = latest_etf_signals(etf_indicators, positions, params)
     tl_today, tl_recent = tl_state(tl_indicators, params)
@@ -116,6 +115,21 @@ def audit_latest(root_dir: Path, etf_file: Path, tl_file: Path, cb_file: Path | 
     latest_dir.mkdir(parents=True, exist_ok=True)
     (latest_dir / "audit.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return payload
+
+
+def _add_etf_audit_indicators(
+    etf_raw: pd.DataFrame,
+    params: dict[str, Any],
+) -> pd.DataFrame:
+    normalized_etf = normalize_etf_config(params)
+    medium_profile = normalized_etf["strategy_profiles"]["trend_pullback_v2"]["medium_trend"]
+    return pd.concat(
+        [
+            add_etf_indicators(group, "成交量（万股）", medium_profile)
+            for _, group in etf_raw.groupby(["name", "code"])
+        ],
+        ignore_index=True,
+    )
 
 
 def _configured_cb_file(root_dir: Path) -> Path | None:
