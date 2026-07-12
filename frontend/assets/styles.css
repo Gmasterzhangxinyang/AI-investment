@@ -3762,3 +3762,14 @@ body[data-view="chat"] #context-sources {
     grid-template-columns: 1fr;
   }
 }
+.strategy-selector-panel {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border, #d8dde6);
+  border-radius: 12px;
+}
+
+.strategy-selector-panel select { max-width: 420px; }
+.strategy-check { display: flex; gap: 8px; align-items: center; }

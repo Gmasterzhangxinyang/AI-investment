@@ -10,6 +10,7 @@ const state = {
   selectedAssetCode: null,
   assetDetail: null,
   strategyParams: null,
+  serverStrategyState: null,
   modelConfig: null,
   openaiModels: [],
   openaiModelSource: "",
@@ -359,6 +360,7 @@ async function loadStrategyParams() {
     const result = await response.json();
     if (!response.ok || result.status !== "success") throw new Error(result.message || `HTTP ${response.status}`);
     state.strategyParams = result.params || {};
+    state.serverStrategyState = ETFStrategyConfig.normalizeStrategyResponse(result);
     renderStrategyParams();
   } catch (error) {
     const status = document.getElementById("params-status");
@@ -371,6 +373,7 @@ async function saveStrategyParams() {
   const status = document.getElementById("params-status");
   try {
     syncParamsFromForm();
+    syncEtfStrategyFromForm();
     const response = await fetch("/api/strategy-params", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -379,9 +382,14 @@ async function saveStrategyParams() {
     const result = await response.json();
     if (!response.ok || result.status !== "success") throw new Error(result.message || `HTTP ${response.status}`);
     state.strategyParams = result.params;
+    state.serverStrategyState = ETFStrategyConfig.normalizeStrategyResponse(result);
     if (status) status.textContent = "参数已保存。下一次刷新数据时生效。";
     renderStrategyParams();
   } catch (error) {
+    if (state.serverStrategyState) {
+      state.strategyParams = JSON.parse(JSON.stringify(state.serverStrategyState.params));
+      renderStrategyParams();
+    }
     if (status) status.textContent = `保存失败：${error.message}`;
   }
 }
@@ -546,6 +554,7 @@ function renderStrategyParams() {
   const status = document.getElementById("params-status");
   if (!params || !form) return;
   if (status) status.textContent = "参数已载入。修改后点击 Save Params。";
+  renderEtfStrategySelector();
   const fields = [
     ["ETF", [
       ["etf.buy_volume_ratio_min", "建仓量能倍数", "number"],
@@ -601,6 +610,55 @@ function renderStrategyParams() {
       </section>
     `)
     .join("");
+}
+
+function renderEtfStrategySelector() {
+  const strategyState = state.serverStrategyState;
+  const select = document.getElementById("etf-strategy-select");
+  const diagnostics = document.getElementById("etf-diagnostics-enabled");
+  if (!strategyState || !select) return;
+  select.innerHTML = strategyState.strategies
+    .map((item) => `<option value="${escapeHtml(item.strategy_id)}" ${item.strategy_id === strategyState.confirmedStrategyId ? "selected" : ""}>${escapeHtml(item.display_name)} · v${escapeHtml(item.version)}</option>`)
+    .join("");
+  if (diagnostics) diagnostics.checked = (state.strategyParams?.etf?.diagnostic_strategies || []).length > 1;
+  const generated = state.data?.run_info?.etf_strategy || state.data?.runInfo?.etf_strategy || null;
+  const generatedTarget = document.getElementById("etf-generated-strategy");
+  if (generatedTarget) generatedTarget.textContent = generated
+    ? `当前页面结果：${generated.strategy_id} · v${generated.strategy_version}`
+    : "当前页面尚无策略身份记录";
+  const refreshState = ETFStrategyConfig.generatedResultState(strategyState, generated);
+  const refreshTarget = document.getElementById("etf-strategy-refresh-state");
+  if (refreshTarget) refreshTarget.textContent = refreshState.label;
+  renderEtfProfileControls();
+}
+
+function renderEtfProfileControls() {
+  const target = document.getElementById("etf-strategy-params");
+  const strategyState = state.serverStrategyState;
+  const strategyId = document.getElementById("etf-strategy-select")?.value || strategyState?.confirmedStrategyId;
+  const metadata = strategyState?.strategies?.find((item) => item.strategy_id === strategyId);
+  if (!target || !metadata || strategyId === "legacy_v1") {
+    if (target) target.innerHTML = "<p class=\"plain-text\">原始策略继续使用下方 ETF 量能和评分参数。</p>";
+    return;
+  }
+  const groups = Object.entries(metadata.parameter_schema || {});
+  target.innerHTML = groups.map(([group, fields]) => `
+    <section class="param-group"><h3>${group === "medium_trend" ? "中期趋势" : "短期入场"}</h3><div class="param-grid">
+      ${Object.entries(fields).map(([key, spec]) => {
+        const path = `etf.strategy_profiles.${strategyId}.${group}.${key}`;
+        const value = getByPath(state.strategyParams, path) ?? spec.default;
+        return `<div class="param-field"><label>${escapeHtml(spec.label || key)}</label><input data-param="${escapeHtml(path)}" type="number" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${escapeHtml(value ?? "")}" /></div>`;
+      }).join("")}
+    </div></section>`).join("");
+}
+
+function syncEtfStrategyFromForm() {
+  const selected = document.getElementById("etf-strategy-select")?.value;
+  if (!selected || !state.strategyParams?.etf) return;
+  state.strategyParams.etf.active_strategy = selected;
+  state.strategyParams.etf.diagnostic_strategies = document.getElementById("etf-diagnostics-enabled")?.checked
+    ? ["legacy_v1", "trend_pullback_v2"]
+    : [selected];
 }
 
 function renderModelConfig() {
@@ -904,6 +962,8 @@ function render() {
   const etfBuyColumns = [
     ["name", "标的"],
     ["code", "代码"],
+    ["medium_status", "中期趋势"],
+    ["short_entry_status", "短期入场"],
     ["close", "收盘"],
     ["ma5_ma10_signal", "MA5/MA10"],
     ["vol_ratio60", "量能倍数"],
@@ -914,6 +974,8 @@ function render() {
   const etfSellColumns = [
     ["name", "标的"],
     ["code", "代码"],
+    ["medium_status", "中期趋势"],
+    ["short_entry_status", "短期入场"],
     ["close", "收盘"],
     ["ma5_ma10_signal", "MA5/MA10"],
     ["vol_ratio60", "量能倍数"],
@@ -923,6 +985,8 @@ function render() {
   const etfWatchColumns = [
     ["name", "标的"],
     ["code", "代码"],
+    ["medium_status", "中期趋势"],
+    ["short_entry_status", "短期入场"],
     ["close", "收盘"],
     ["ma5_ma10_signal", "MA5/MA10"],
     ["vol_ratio60", "量能倍数"],
@@ -935,6 +999,8 @@ function render() {
     ["name", "标的"],
     ["code", "代码"],
     ["position_status", "持仓状态"],
+    ["medium_status", "中期趋势"],
+    ["short_entry_status", "短期入场"],
     ["display_action", "触发状态"],
     ["score", "强弱分"],
     ["close", "收盘"],
@@ -2117,6 +2183,7 @@ document.getElementById("export-pdf").addEventListener("click", exportPdf);
 document.getElementById("ai-chat-toggle")?.addEventListener("click", toggleAiChatMode);
 document.getElementById("clear-chat-memory")?.addEventListener("click", clearShortTermMemory);
 document.getElementById("save-params")?.addEventListener("click", saveStrategyParams);
+document.getElementById("etf-strategy-select")?.addEventListener("change", renderEtfProfileControls);
 document.getElementById("save-model-config")?.addEventListener("click", saveModelConfig);
 document.getElementById("refresh-openai-models")?.addEventListener("click", loadOpenAiModels);
 document.getElementById("model-config-form")?.addEventListener("click", (event) => {

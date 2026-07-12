@@ -440,6 +440,17 @@
                 <button id="save-params" class="button primary" type="button">保存参数</button>
               </div>
               <div id="params-status" class="plain-text">正在读取参数。</div>
+              <div class="strategy-selector-panel">
+                <label for="etf-strategy-select">ETF 当前策略</label>
+                <select id="etf-strategy-select"></select>
+                <div id="etf-generated-strategy" class="plain-text"></div>
+                <div id="etf-strategy-refresh-state" class="plain-text" role="status"></div>
+                <label class="strategy-check">
+                  <input id="etf-diagnostics-enabled" type="checkbox" />
+                  对比旧版与趋势回踩历史诊断
+                </label>
+                <div id="etf-strategy-params"></div>
+              </div>
               <form id="params-form" class="params-form"></form>
             </article>
           </div>
@@ -535,6 +546,7 @@
       </main>
     </div>
 
-    <script src="./assets/app.js?v=20260703-no-review-button-v1"></script>
+    <script src="./assets/strategy-config.js?v=20260712-etf-v2"></script>
+    <script src="./assets/app.js?v=20260712-etf-v2"></script>
   </body>
 </html>
