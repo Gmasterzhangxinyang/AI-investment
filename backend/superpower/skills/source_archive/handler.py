@@ -52,6 +52,23 @@ class Skill:
             encoding="utf-8",
         )
 
+        strategy_snapshot = context.maybe("etf_config_snapshot")
+        if strategy_snapshot is not None:
+            snapshot_path = archive_dir / "etf_strategy_config.json"
+            snapshot_path.write_text(
+                json.dumps(
+                    {
+                        "run_id": context.run_id,
+                        "config_hash": context.get("etf_config_hash"),
+                        "etf": strategy_snapshot,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            context.put("etf_config_snapshot_path", snapshot_path)
+
         context.put("source_manifest", manifest)
         context.put("source_manifest_path", manifest_path)
         return {

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from superpower.skills.etf_rotation_strategy.config import etf_config_hash, normalize_etf_config
+
 from superpower.runtime.agent import AgentSpec, BaseAgent
 from superpower.runtime.context import AgentContext
 from superpower.runtime.result import AgentStatus
@@ -33,6 +35,10 @@ class ConfigAgent(BaseAgent):
             model_config["llm_enabled"] = False
             model_config["disabled_reason"] = "fast_refresh"
             context.put("model_config", model_config)
+
+        etf_snapshot = normalize_etf_config(context.get("strategy_params"))
+        context.put("etf_config_snapshot", etf_snapshot)
+        context.put("etf_config_hash", etf_config_hash(etf_snapshot))
 
         return "配置读取完成", {
             "config_sections": 4,

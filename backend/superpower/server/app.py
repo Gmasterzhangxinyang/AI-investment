@@ -22,6 +22,13 @@ from superpower.chat import ChatOrchestrator
 from superpower.chat.schemas import ChatRequest
 from superpower.db import DatabaseRepository
 from superpower.skills.ai_research_committee.handler import COMMITTEE_LLM_TIMEOUT_SECONDS, COMMITTEE_ROLES
+from superpower.skills.etf_rotation_strategy.config import (
+    etf_config_hash,
+    merge_strategy_params,
+    normalize_etf_config,
+    validate_all_etf_profiles,
+)
+from superpower.skills.etf_rotation_strategy.registry import default_registry
 from superpower.tools.llm import generate_text
 from superpower.tools.pdf_report import write_research_pdf
 from superpower.tools.text_cleaner import clean_llm_text
@@ -67,7 +74,8 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
             self._send_json({"status": "success", "job": DatabaseRepository(self.root_dir).latest_refresh_job()})
             return
         if path.startswith("/api/strategy-params"):
-            self._send_json({"status": "success", "params": self._load_strategy_params()})
+            params = self._load_strategy_params()
+            self._send_json(_strategy_params_payload(params))
             return
         if path.startswith("/api/openai-models"):
             self._send_json(self._openai_models())
@@ -418,15 +426,16 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
             params = payload.get("params", payload)
             if not isinstance(params, dict):
                 raise ValueError("Strategy params must be a JSON object.")
-            _validate_strategy_params(params)
             path = self.root_dir / "configs" / "strategy_params.json"
+            params = merge_strategy_params(self._load_strategy_params(), params)
+            _validate_strategy_params(params)
             tmp_path = path.with_suffix(".json.tmp")
             tmp_path.write_text(json.dumps(params, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             tmp_path.replace(path)
         except Exception as exc:
             self._send_json({"status": "failed", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
-        self._send_json({"status": "success", "params": params})
+        self._send_json(_strategy_params_payload(params))
 
     def _save_model_config(self) -> None:
         try:
@@ -741,6 +750,28 @@ def _validate_strategy_params(params: dict[str, Any]) -> None:
         raise ValueError("ETF buy_volume_ratio_min must be positive.")
     if float(cb.get("min_price", 0)) >= float(cb.get("price_limit", 0)):
         raise ValueError("Convertible bond min_price must be below price_limit.")
+    normalized = normalize_etf_config(params)
+    validate_all_etf_profiles(normalized)
+
+
+def _strategy_params_payload(params: dict[str, Any]) -> dict[str, Any]:
+    normalized = normalize_etf_config(params)
+    strategies = [
+        {
+            "strategy_id": item.strategy_id,
+            "display_name": item.display_name,
+            "version": item.version,
+            "default_params": item.default_params,
+            "parameter_schema": item.parameter_schema,
+        }
+        for item in default_registry().metadata()
+    ]
+    return {
+        "status": "success",
+        "params": params,
+        "etfStrategies": strategies,
+        "etfConfigHash": etf_config_hash(normalized),
+    }
 
 
 def _validate_model_config(config: dict[str, Any]) -> None:
