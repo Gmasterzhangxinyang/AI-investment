@@ -12,7 +12,13 @@ class BacktestAgent(SkillBackedAgent):
         objective="用当前可用历史数据对 ETF 和 TL 规则做可复现诊断，输出交易次数、胜率、收益分布和历史长度风险。",
         skill_name="strategy-backtest",
         required_artifacts=("skill_registry", "etf_indicators", "tl_indicators", "strategy_params"),
-        produced_artifacts=("backtest_summary", "backtest_trades"),
+        produced_artifacts=(
+            "backtest_summary",
+            "backtest_trades",
+            "etf_historical_state_traces",
+            "etf_historical_diagnostic_events",
+            "etf_historical_diagnostics",
+        ),
         quality_gates=(
             "回测使用确定性规则，不允许 LLM 参与",
             "信号日收盘后生成，模拟交易使用下一交易日开盘价",

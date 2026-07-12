@@ -202,7 +202,7 @@ class TrendPullbackV2Strategy:
             "action": signal_type,
             "display_action": legacy_action_text(signal_type),
             "reason": short.reason,
-            "metrics": legacy_metrics(row),
+            "metrics": {**legacy_metrics(row), "entry_route": short.entry_route},
             "rule_hits": "；".join((*medium.rule_hits, *short.rule_hits)),
             "risk_notes": "；".join(risk_notes),
             "confidence": "low" if medium.status is MediumStatus.DATA_UNAVAILABLE else "medium",

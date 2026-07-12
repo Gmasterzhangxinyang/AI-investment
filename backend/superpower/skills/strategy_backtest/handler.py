@@ -6,6 +6,14 @@ import numpy as np
 import pandas as pd
 
 from superpower.runtime.context import AgentContext
+from superpower.skills.etf_rotation_strategy.config import etf_config_hash, normalize_etf_config
+from superpower.skills.etf_rotation_strategy.contracts import ETFHistory
+from superpower.skills.etf_rotation_strategy.registry import default_registry
+from superpower.skills.etf_rotation_strategy.strategies.trend_pullback_v2.diagnostics import (
+    diagnostic_events,
+    diagnostic_trace,
+    summarize_historical_diagnostics,
+)
 from superpower.skills.etf_rotation_strategy.strategies.legacy_v1 import (
     legacy_buy_reasons as _buy_reasons,
 )
@@ -28,16 +36,63 @@ class Skill:
         tl_history = tl_state_history(tl, params)
         next_day_checks = _next_day_signal_checks(etf, params)
         summary = _summary(etf, etf_trades, tl_history, next_day_checks)
+        traces, diagnostic_event_frame, historical_diagnostics = _historical_diagnostics(
+            etf,
+            params,
+        )
 
         context.put("backtest_summary", summary)
         context.put("backtest_trades", etf_trades)
         context.put("backtest_next_day_checks", next_day_checks)
+        context.put("etf_historical_state_traces", traces)
+        context.put("etf_historical_diagnostic_events", diagnostic_event_frame)
+        context.put("etf_historical_diagnostics", historical_diagnostics)
         return {
             "backtest_summary_rows": len(summary),
             "backtest_trades": len(etf_trades),
             "backtest_next_day_checks": len(next_day_checks),
             "history_days": int(etf["date"].nunique()) if not etf.empty else 0,
+            "historical_diagnostic_events": len(diagnostic_event_frame),
         }
+
+
+def _historical_diagnostics(
+    etf: pd.DataFrame,
+    params: dict[str, Any],
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    if etf.empty:
+        empty = pd.DataFrame()
+        return empty, empty.copy(), empty.copy()
+    normalized = normalize_etf_config(params)
+    registry = default_registry()
+    config_hash = etf_config_hash(normalized)
+    trace_frames: list[pd.DataFrame] = []
+    event_frames: list[pd.DataFrame] = []
+    for strategy_id in normalized["diagnostic_strategies"]:
+        strategy = registry.create(strategy_id)
+        profile = normalized["strategy_profiles"][strategy_id]
+        for (name, code), group in etf.groupby(["name", "code"]):
+            rows = group.sort_values("date").reset_index(drop=True)
+            if rows.empty:
+                continue
+            history = ETFHistory(
+                code=str(code),
+                name=str(name),
+                rows=rows,
+                as_of=pd.Timestamp(rows.iloc[-1]["date"]),
+            )
+            decisions = strategy.evaluate_history(history, profile)
+            trace = diagnostic_trace(decisions, rows, config_hash=config_hash)
+            if trace.empty:
+                continue
+            trace_frames.append(trace)
+            events = diagnostic_events(trace)
+            if not events.empty:
+                event_frames.append(events)
+    traces = pd.concat(trace_frames, ignore_index=True) if trace_frames else pd.DataFrame()
+    events = pd.concat(event_frames, ignore_index=True) if event_frames else pd.DataFrame()
+    summary = summarize_historical_diagnostics(events, traces)
+    return traces, events, summary
 
 
 def _backtest_etf(etf: pd.DataFrame, params: dict[str, Any]) -> pd.DataFrame:
