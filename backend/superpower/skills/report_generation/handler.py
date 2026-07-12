@@ -10,6 +10,7 @@ from superpower.runtime.context import AgentContext
 from superpower.runtime.artifact_store import ArtifactStore
 from superpower.tools.excel_writer import write_workbook
 from superpower.tools.frame import agent_audit_frame, records
+from superpower.tools.report_date import report_date_text
 from superpower.utils.text_safety import DISCLAIMER, sanitize_dashboard, sanitize_frame, scan_frame
 
 
@@ -153,16 +154,11 @@ class Skill:
 
 
 def _report_date(context: AgentContext) -> str:
-    candidates: list[pd.Timestamp] = []
-    for key in ("etf_indicators", "tl_indicators", "cb_ranked"):
-        frame = context.maybe(key, pd.DataFrame())
-        if not frame.empty and "date" in frame.columns:
-            value = pd.to_datetime(frame["date"], errors="coerce").max()
-            if pd.notna(value):
-                candidates.append(pd.Timestamp(value))
-    if not candidates:
-        return datetime.now().strftime("%Y%m%d")
-    return max(candidates).strftime("%Y%m%d")
+    return report_date_text(
+        context.maybe("etf_indicators", pd.DataFrame()),
+        context.maybe("tl_indicators", pd.DataFrame()),
+        context.maybe("cb_ranked", pd.DataFrame()),
+    )
 
 
 def _dashboard_frame(

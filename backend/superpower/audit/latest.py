@@ -21,6 +21,7 @@ from superpower.tools.excel_reader import (
     parse_positions_from_etf_workbook,
     parse_wind_wide_excel,
 )
+from superpower.tools.report_date import report_date_text
 
 
 FLOAT_TOLERANCE = 1e-8
@@ -78,7 +79,7 @@ def audit_latest(root_dir: Path, etf_file: Path, tl_file: Path, cb_file: Path | 
     cb_ranked = rank_convertible_bonds(cb_data, params) if not cb_data.empty else pd.DataFrame()
     cb_qualified, _, _ = split_candidate_qualification(cb_ranked) if not cb_ranked.empty else (pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
 
-    report_date = max(etf_indicators["date"].max(), tl_indicators["date"].max()).strftime("%Y%m%d")
+    report_date = report_date_text(etf_indicators, tl_indicators, cb_ranked)
     report_path = _resolve_report_path(root_dir, dashboard.get("reportPath", ""))
     checks = [
         check_equal("latest report date", report_date, dashboard["reportDate"]),
