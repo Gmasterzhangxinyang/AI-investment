@@ -6,6 +6,8 @@ import pandas as pd
 from superpower.runtime.context import AgentContext
 from superpower.skills.technical_indicators.handler import add_indicators
 
+from .fund_flow import attach_fund_flow_diagnostics
+
 
 class Skill:
     def run(self, context: AgentContext) -> dict[str, object]:
@@ -27,11 +29,12 @@ def tl_state(tl: pd.DataFrame, params: dict) -> tuple[pd.DataFrame, pd.DataFrame
 
 
 def tl_state_history(tl: pd.DataFrame, params: dict) -> pd.DataFrame:
+    tl_params = params.get("tl", {})
     if tl.empty:
-        return _empty_tl_state()
+        return attach_fund_flow_diagnostics(_empty_tl_state(), tl_params)
     out = tl.sort_values("date").reset_index(drop=True).copy()
     if len(out) < 60:
-        return _insufficient_tl_history(out)
+        return attach_fund_flow_diagnostics(_insufficient_tl_history(out), tl_params)
     weekly_map = _weekly_state_as_of_each_day(out, params)
     out = out.merge(weekly_map, on="date", how="left")
     daily_conditions = [
@@ -76,6 +79,7 @@ def tl_state_history(tl: pd.DataFrame, params: dict) -> pd.DataFrame:
     out["risk_notes"] = TL_DIAGNOSTIC_NOTE
     out["data_quality"] = np.where(out["macd_hist"].notna() & out["kdj_j"].notna(), "OK", "WARN")
     out["confidence"] = np.where(out["data_quality"] == "OK", "medium", "low")
+    out = attach_fund_flow_diagnostics(out, tl_params)
     out["metrics"] = [
         {
             "close": _safe_float(row.get("收盘价")),
@@ -85,6 +89,10 @@ def tl_state_history(tl: pd.DataFrame, params: dict) -> pd.DataFrame:
             "weekly_kdj_j": _safe_float(row.get("week_kdj_j")),
             "weekly_kdj_low_window": _safe_float(row.get("weekly_kdj_low_window")),
             "daily_kdj_low_window": _safe_float(row.get("daily_kdj_low_window")),
+            "fund_share_change_daily": _safe_float(row.get("fund_share_change_daily")),
+            "fund_share_5d_sum": _safe_float(row.get("fund_share_5d_sum")),
+            "fund_flow_state": row.get("fund_flow_state"),
+            "fund_flow_relation": row.get("fund_flow_relation"),
         }
         for _, row in out.iterrows()
     ]
@@ -255,6 +263,7 @@ def _empty_tl_state() -> pd.DataFrame:
                 "daily_kdj_threshold_check": "TL行情不足，KDJ低位条件不满足",
                 "weekly_kdj_low_window": np.nan,
                 "daily_kdj_low_window": np.nan,
+                "份额变化（亿份）": np.nan,
             }
         ]
     )
@@ -302,6 +311,7 @@ def _insufficient_tl_history(tl: pd.DataFrame) -> pd.DataFrame:
                 "daily_kdj_threshold_check": "TL有效历史不足，KDJ低位条件不满足",
                 "weekly_kdj_low_window": np.nan,
                 "daily_kdj_low_window": np.nan,
+                "份额变化（亿份）": row.get("份额变化（亿份）", np.nan),
             }
         )
     return pd.DataFrame(rows)
