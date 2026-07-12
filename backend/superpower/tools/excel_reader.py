@@ -435,7 +435,31 @@ def _parse_wind_wide_sheet(path: Path, sheet_name: str, volume_field: str) -> pd
         .reset_index()
         .rename_axis(None, axis=1)
     )
-    return filter_trading_rows(wide, volume_field)
+    trading = filter_trading_rows(wide, volume_field)
+    return _attach_date_aligned_auxiliary_fields(wide, trading, required)
+
+
+def _attach_date_aligned_auxiliary_fields(
+    wide: pd.DataFrame,
+    trading: pd.DataFrame,
+    required: list[str],
+) -> pd.DataFrame:
+    if trading.empty:
+        return trading
+    valid_primary = pd.Series(True, index=wide.index)
+    for field in required:
+        valid_primary &= pd.to_numeric(wide[field], errors="coerce").fillna(0).gt(0)
+    auxiliary = wide[~valid_primary].copy()
+    identifiers = {"date", "name", "code", *required}
+    for field in (column for column in wide.columns if column not in identifiers):
+        if field not in trading.columns or not trading[field].isna().all():
+            continue
+        candidates = auxiliary[["date", "code", field]].dropna(subset=[field])
+        if candidates.empty or candidates["code"].nunique() != 1:
+            continue
+        date_values = candidates.drop_duplicates("date", keep="last").set_index("date")[field]
+        trading[field] = trading["date"].map(date_values)
+    return trading
 
 
 def filter_trading_rows(df: pd.DataFrame, volume_field: str) -> pd.DataFrame:
