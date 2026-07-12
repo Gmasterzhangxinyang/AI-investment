@@ -39,6 +39,11 @@ LEGACY_SIGNAL_COLUMNS = [
     "sell_signal",
     "signal_reason",
     "score",
+    "risk_overlay_level",
+    "risk_overlay_summary",
+    "risk_overlay_flags",
+    "risk_overlay_ma20_state",
+    "risk_overlay_weekly_macd_state",
 ]
 
 CANONICAL_SIGNAL_COLUMNS = [

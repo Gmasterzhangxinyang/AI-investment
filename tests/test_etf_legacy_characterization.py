@@ -40,6 +40,8 @@ def history(code: str = "510001", name: str = "样例ETF", rows: int = 61) -> pd
                 "ma10": 10.0,
                 "ma20": 9.5,
                 "ma60": 9.0,
+                "ma20_slope_state": "flat",
+                "weekly_macd_state": "green_narrowing",
                 "vol_ratio60": 1.0,
                 "dif": -0.02,
                 "dea": -0.01,
@@ -232,6 +234,51 @@ def test_score_and_sort_order_are_frozen() -> None:
     assert score_etf(strong.iloc[-1], PARAMS) == 81.4
     assert list(buys["code"]) == ["510001", "510002"]
     assert list(all_rows.head(2)["code"]) == ["510001", "510002"]
+
+
+def test_high_risk_overlay_does_not_change_legacy_candidate_score_or_order() -> None:
+    high_risk = history(code="510001", name="高风险ETF")
+    high_risk.loc[59, ["ma5", "ma10", "macd_hist", "收盘价"]] = [
+        9.9,
+        10.0,
+        -0.02,
+        10.0,
+    ]
+    high_risk.loc[
+        60,
+        [
+            "开盘价",
+            "最高价",
+            "最低价",
+            "收盘价",
+            "ma5",
+            "ma10",
+            "macd_hist",
+            "vol_ratio60",
+            "ma20_slope_state",
+        ],
+    ] = [10.0, 10.6, 10.0, 10.5, 10.1, 10.0, -0.01, 2.0, "down"]
+    normal = history(code="510002", name="普通ETF")
+    normal.loc[59, ["ma5", "ma10", "macd_hist"]] = [9.9, 10.0, -0.02]
+    normal.loc[60, ["ma5", "ma10", "macd_hist", "vol_ratio60"]] = [
+        10.1,
+        10.0,
+        -0.01,
+        1.1,
+    ]
+
+    all_rows, buys, _, _, _ = evaluate(
+        pd.concat([normal, high_risk], ignore_index=True)
+    )
+
+    expected_score = score_etf(high_risk.iloc[-1], PARAMS)
+    high_risk_row = all_rows.loc[all_rows["code"] == "510001"].iloc[0]
+    assert list(buys["code"]) == ["510001", "510002"]
+    assert high_risk_row["signal_type"] == "buy_candidate"
+    assert high_risk_row["score"] == expected_score
+    assert high_risk_row["signal_reason"].startswith("MA5上穿MA10")
+    assert high_risk_row["risk_overlay_level"] == "high"
+    assert "不改变原策略评分和排名" in high_risk_row["risk_overlay_summary"]
 
 
 def test_detail_history_keeps_last_eight_rows_in_date_order() -> None:

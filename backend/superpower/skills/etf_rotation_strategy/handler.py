@@ -18,6 +18,7 @@ from .contracts import (
     ETFStrategyRuntimeError,
 )
 from .registry import default_registry
+from .risk_overlay import evaluate_legacy_risk_overlay
 from .strategies.legacy_v1 import (
     legacy_buy_reasons,
     legacy_score,
@@ -76,8 +77,41 @@ def latest_etf_signals(
     strategy = registry.create(normalized["active_strategy"])
     profile = normalized["strategy_profiles"][normalized["active_strategy"]]
     decisions = evaluate_latest_by_symbol(etf, positions, strategy, profile)
+    if normalized["active_strategy"] == "legacy_v1":
+        decisions = attach_legacy_risk_overlays(
+            decisions,
+            etf,
+            normalized["strategy_profiles"]["trend_pullback_v2"]["short_entry"],
+        )
     decisions = attach_quality_warnings(decisions, quality_warnings)
     return decisions_to_legacy_tables(decisions, etf)
+
+
+def attach_legacy_risk_overlays(
+    decisions: Sequence[ETFDecision],
+    etf: pd.DataFrame,
+    profile: Mapping[str, Any],
+) -> list[ETFDecision]:
+    histories = {
+        str(code): group.sort_values("date").reset_index(drop=True)
+        for (_, code), group in etf.groupby(["name", "code"])
+    }
+    attached: list[ETFDecision] = []
+    for decision in decisions:
+        rows = histories.get(str(decision.code), pd.DataFrame())
+        overlay = evaluate_legacy_risk_overlay(rows, profile)
+        fields = dict(decision.compatibility_fields)
+        fields.update(
+            {
+                "risk_overlay_level": overlay.level,
+                "risk_overlay_summary": overlay.summary,
+                "risk_overlay_flags": "；".join(overlay.flags),
+                "risk_overlay_ma20_state": overlay.ma20_state,
+                "risk_overlay_weekly_macd_state": overlay.weekly_macd_state,
+            }
+        )
+        attached.append(replace(decision, compatibility_fields=fields))
+    return attached
 
 
 def attach_quality_warnings(
