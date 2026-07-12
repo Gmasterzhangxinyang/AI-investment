@@ -42,5 +42,9 @@
     return { status: "current", label: "当前结果已按此策略生成" };
   }
 
-  return { deepMerge, normalizeStrategyResponse, generatedResultState };
+  function showV2StateColumns(generated) {
+    return generated?.strategy_id === "trend_pullback_v2";
+  }
+
+  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns };
 });

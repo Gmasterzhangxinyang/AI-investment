@@ -952,6 +952,10 @@ async function exportPdf() {
 function render() {
   const data = state.data;
   const summary = data.summary || [];
+  const generatedEtfStrategy = data.etf?.strategy || data.run_info?.etf_strategy || null;
+  const etfStateColumns = ETFStrategyConfig.showV2StateColumns(generatedEtfStrategy)
+    ? [["medium_status", "中期趋势"], ["short_entry_status", "短期入场"]]
+    : [];
   document.getElementById("report-date").textContent = data.reportDate || "--";
   document.getElementById("rail-date").textContent = data.reportDate ? `日期 ${data.reportDate}` : "--";
   document.getElementById("report-link").href = data.reportPath ? reportUrl(data.reportPath) : "#";
@@ -962,8 +966,7 @@ function render() {
   const etfBuyColumns = [
     ["name", "标的"],
     ["code", "代码"],
-    ["medium_status", "中期趋势"],
-    ["short_entry_status", "短期入场"],
+    ...etfStateColumns,
     ["close", "收盘"],
     ["ma5_ma10_signal", "MA5/MA10"],
     ["vol_ratio60", "量能倍数"],
@@ -974,8 +977,7 @@ function render() {
   const etfSellColumns = [
     ["name", "标的"],
     ["code", "代码"],
-    ["medium_status", "中期趋势"],
-    ["short_entry_status", "短期入场"],
+    ...etfStateColumns,
     ["close", "收盘"],
     ["ma5_ma10_signal", "MA5/MA10"],
     ["vol_ratio60", "量能倍数"],
@@ -985,8 +987,7 @@ function render() {
   const etfWatchColumns = [
     ["name", "标的"],
     ["code", "代码"],
-    ["medium_status", "中期趋势"],
-    ["short_entry_status", "短期入场"],
+    ...etfStateColumns,
     ["close", "收盘"],
     ["ma5_ma10_signal", "MA5/MA10"],
     ["vol_ratio60", "量能倍数"],
@@ -999,8 +1000,7 @@ function render() {
     ["name", "标的"],
     ["code", "代码"],
     ["position_status", "持仓状态"],
-    ["medium_status", "中期趋势"],
-    ["short_entry_status", "短期入场"],
+    ...etfStateColumns,
     ["display_action", "触发状态"],
     ["score", "强弱分"],
     ["close", "收盘"],

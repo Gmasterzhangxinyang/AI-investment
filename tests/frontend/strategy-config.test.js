@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { deepMerge, normalizeStrategyResponse, generatedResultState } = require("../../frontend/assets/strategy-config.js");
+const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns } = require("../../frontend/assets/strategy-config.js");
 
 test("deepMerge preserves dormant profiles and replaces arrays", () => {
   const current = { etf: { diagnostic_strategies: ["legacy_v1"], strategy_profiles: { future_v3: { kept: true } } } };
@@ -32,4 +32,10 @@ test("matching identity is current", () => {
     { savedConfigHash: "same", confirmedStrategyId: "trend_pullback_v2", confirmedStrategyVersion: "2.0.0" },
     { config_hash: "same", strategy_id: "trend_pullback_v2", strategy_version: "2.0.0" },
   ).status, "current");
+});
+
+test("medium and short state columns only show for generated v2 results", () => {
+  assert.equal(showV2StateColumns({ strategy_id: "legacy_v1", strategy_version: "1.0.0" }), false);
+  assert.equal(showV2StateColumns({ strategy_id: "trend_pullback_v2", strategy_version: "2.0.0" }), true);
+  assert.equal(showV2StateColumns(null), false);
 });
