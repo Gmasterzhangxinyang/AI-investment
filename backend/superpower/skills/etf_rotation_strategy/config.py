@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
+from .strategies.trend_pullback_v2.defaults import DEFAULT_PROFILE
+
 
 class ETFConfigurationError(ValueError):
     """Raised before a run or save when ETF plugin configuration is invalid."""
@@ -70,7 +72,13 @@ def normalize_etf_config(strategy_params: Mapping[str, Any]) -> dict[str, Any]:
     for key, value in legacy.items():
         normalized[key] = deepcopy(value)
     profiles["legacy_v1"] = deepcopy(legacy)
-    profiles.setdefault("trend_pullback_v2", {})
+    raw_v2 = profiles.get("trend_pullback_v2", {})
+    if not isinstance(raw_v2, Mapping):
+        raise ETFConfigurationError("trend_pullback_v2 profile must be an object")
+    v2_profile = merge_strategy_params(DEFAULT_PROFILE, raw_v2)
+    v2_profile["exit"]["legacy_params"] = deepcopy(legacy)
+    v2_profile["ranking"]["legacy_params"] = deepcopy(legacy)
+    profiles["trend_pullback_v2"] = v2_profile
     normalized["strategy_profiles"] = profiles
     return normalized
 
