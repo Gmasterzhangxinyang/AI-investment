@@ -6,7 +6,12 @@ import numpy as np
 import pandas as pd
 
 from superpower.runtime.context import AgentContext
-from superpower.skills.etf_rotation_strategy.handler import _buy_reasons, _sell_reasons
+from superpower.skills.etf_rotation_strategy.strategies.legacy_v1 import (
+    legacy_buy_reasons as _buy_reasons,
+)
+from superpower.skills.etf_rotation_strategy.strategies.legacy_v1 import (
+    legacy_sell_reasons as _sell_reasons,
+)
 from superpower.skills.tl_timing_strategy.handler import tl_state_history
 
 

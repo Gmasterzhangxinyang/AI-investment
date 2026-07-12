@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 import pandas as pd
 
 from superpower.skills.etf_rotation_strategy.handler import latest_etf_signals, score_etf
+from superpower.skills.etf_rotation_strategy.registry import default_registry
 
 
 PARAMS = {
@@ -58,6 +61,33 @@ def positions(*codes: str) -> pd.DataFrame:
 
 def evaluate(data: pd.DataFrame, *holding_codes: str):
     return latest_etf_signals(data, positions(*holding_codes), PARAMS)
+
+
+def plugin_params() -> dict[str, object]:
+    params = deepcopy(PARAMS)
+    params["etf"]["active_strategy"] = "legacy_v1"
+    params["etf"]["diagnostic_strategies"] = ["legacy_v1"]
+    params["etf"]["strategy_profiles"] = {"legacy_v1": {}}
+    return params
+
+
+def test_default_registry_exposes_legacy_strategy() -> None:
+    registry = default_registry()
+
+    assert registry.create("legacy_v1").strategy_id == "legacy_v1"
+    assert registry.get_metadata("legacy_v1").display_name == "原始策略"
+
+
+def test_explicit_legacy_selection_adds_canonical_identity() -> None:
+    data = history()
+
+    signals, *_ = latest_etf_signals(data, positions(), plugin_params())
+
+    row = signals.iloc[0]
+    assert row["strategy_id"] == "legacy_v1"
+    assert row["strategy_version"] == "1.0.0"
+    assert row["medium_status"] == "not_applicable"
+    assert row["short_entry_status"] == "legacy_neutral"
 
 
 def test_legacy_buy_route_a_and_holding_gate() -> None:

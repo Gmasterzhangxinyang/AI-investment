@@ -35,3 +35,20 @@ class ETFStrategyRegistry:
             return self._metadata[strategy_id]
         except KeyError as exc:
             raise ETFConfigurationError(f"unknown ETF strategy metadata: {strategy_id}") from exc
+
+
+def default_registry() -> ETFStrategyRegistry:
+    from .strategies.legacy_v1 import LegacyV1Strategy
+
+    registry = ETFStrategyRegistry()
+    registry.register(
+        ETFStrategyMetadata(
+            strategy_id="legacy_v1",
+            display_name="原始策略",
+            version="1.0.0",
+            default_params={},
+            parameter_schema={},
+        ),
+        LegacyV1Strategy,
+    )
+    return registry
