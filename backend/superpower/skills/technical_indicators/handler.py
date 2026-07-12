@@ -4,18 +4,31 @@ import numpy as np
 import pandas as pd
 
 from superpower.runtime.context import AgentContext
+from superpower.skills.etf_rotation_strategy.config import normalize_etf_config
 
 
 class Skill:
     def run(self, context: AgentContext) -> dict[str, object]:
+        from .etf import add_etf_indicators
+
         etf_raw = context.get("etf_market_raw")
         tl_raw = context.get("tl_market_raw")
+        normalized_etf = normalize_etf_config(context.get("strategy_params"))
+        v2_profile = normalized_etf["strategy_profiles"].get("trend_pullback_v2", {})
+        medium_profile = v2_profile.get("medium_trend", {})
 
         if etf_raw.empty:
             etf_indicators = _empty_indicators(etf_raw, "成交量（万股）")
         else:
             etf_indicators = pd.concat(
-                [add_indicators(group, "成交量（万股）") for _, group in etf_raw.groupby(["name", "code"])],
+                [
+                    add_etf_indicators(
+                        add_indicators(group, "成交量（万股）"),
+                        "成交量（万股）",
+                        medium_profile,
+                    )
+                    for _, group in etf_raw.groupby(["name", "code"])
+                ],
                 ignore_index=True,
             )
         if tl_raw.empty:
