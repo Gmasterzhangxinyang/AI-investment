@@ -106,6 +106,17 @@
     "growth_winsor_upper": 150,
     "extreme_growth_threshold": 150,
     "small_profit_base_threshold": 1,
+    "linkage_overlay": {
+      "enabled": true,
+      "validation_tolerance": 0.05,
+      "stock_strong_threshold": 3.0,
+      "stock_weak_threshold": -3.0,
+      "bond_strong_threshold": 3.0,
+      "bond_weak_threshold": -2.0,
+      "relative_gap_threshold": 2.0,
+      "premium_expand_threshold": 2.0,
+      "premium_compress_threshold": -2.0
+    },
     "score_weights": {
       "fundamental": 0.25,
       "premium": 0.2,
