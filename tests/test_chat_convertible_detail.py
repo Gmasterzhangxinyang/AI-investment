@@ -80,6 +80,13 @@ def test_single_convertible_answer_uses_dashboard_exclusion_reason_without_llm()
                         "conversion_premium_change": -2.4,
                         "linkage_state": "关注补涨",
                         "linkage_note": "正股偏强、转债跟涨不足且溢价收缩，关注后续是否补涨；不改变原排名。",
+                        "strategy_id": "dynamic_v2",
+                        "strategy_version": "2.0.0",
+                        "base_score": 68.0,
+                        "dynamic_score": 74.0,
+                        "score": 69.2,
+                        "dynamic_state": "关注补涨",
+                        "dynamic_note": "正股偏强、转债跟涨不足且溢价收缩，动态层偏积极。",
                         "detail_source": "dashboard",
                     },
                 },
@@ -97,4 +104,9 @@ def test_single_convertible_answer_uses_dashboard_exclusion_reason_without_llm()
     assert "正股 3.2%" in answer
     assert "转债 0.8%" in answer
     assert "溢价率变化 -2.4 个百分点" in answer
-    assert "不改变原排名" in answer
+    assert "动态策略 v2" in answer
+    assert "基础分 68" in answer
+    assert "动态分 74" in answer
+    assert "综合分 69.2" in answer
+    assert "不会改变资格和硬风控" in answer
+    assert "可调整同一资格池内顺序" in answer

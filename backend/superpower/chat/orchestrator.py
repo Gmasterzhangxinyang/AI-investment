@@ -553,7 +553,20 @@ class ChatOrchestrator:
         bond_return = self._fmt_metric(row.get("bond_daily_return"))
         premium_change = self._fmt_metric(row.get("conversion_premium_change"))
         linkage_note = str(row.get("linkage_note") or "暂无异常提示")
+        strategy_id = str(row.get("strategy_id") or "legacy_v1")
+        base_score = self._fmt_metric(row.get("base_score", row.get("score", snapshot.get("score"))))
+        dynamic_score = self._fmt_metric(row.get("dynamic_score"))
+        dynamic_state = str(row.get("dynamic_state") or row.get("linkage_state") or "--")
+        dynamic_note = str(row.get("dynamic_note") or linkage_note)
         source = str(row.get("detail_source") or ("sqlite_snapshot" if snapshot else "dashboard"))
+
+        if strategy_id == "dynamic_v2":
+            strategy_line = (
+                f"当前策略：动态策略 v2；基础分 {base_score}，动态分 {dynamic_score}，综合分 {score}；"
+                f"动态状态：{dynamic_state}。{dynamic_note}动态层不会改变资格和硬风控，只可调整同一资格池内顺序。"
+            )
+        else:
+            strategy_line = f"当前策略：原策略 v1；评分 {score}。短期联动只作提示，不进入原策略排名。"
 
         return "\n\n".join(
             [
@@ -564,7 +577,8 @@ class ChatOrchestrator:
                     f"存续规模 {size}，强赎状态 {redemption}，评分 {score}，评分等级 {grade}，风险等级 {risk}。"
                 ),
                 f"风险备注：{notes or '--'}",
-                f"短期联动：正股 {stock_return}%，转债 {bond_return}%，溢价率变化 {premium_change} 个百分点；{linkage_note}。该提示不改变原排名。",
+                strategy_line,
+                f"短期联动原始值：正股 {stock_return}%，转债 {bond_return}%，溢价率变化 {premium_change} 个百分点。",
                 "规则口径：可转债先做价格、评级、强赎、YTM、溢价率、规模和基本面等风控，再做候选资格分层；弱观察和风险观察不补进合格 Top。",
                 f"来源：{source}、dashboard.convertible_bond、SQLite asset_master、configs/strategy_params.json。",
             ]

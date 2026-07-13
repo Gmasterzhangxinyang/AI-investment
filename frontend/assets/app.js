@@ -2152,12 +2152,17 @@ function localConvertibleAnswer(question) {
   const name = row.bond_name || row.name || "--";
   const code = row.bond_code || row.code || "--";
   const reason = row.not_top_reason || row.excluded_reason || row.rank_reason || "--";
+  const dynamicStrategy = row.strategy_id === "dynamic_v2";
+  const strategyLine = dynamicStrategy
+    ? `当前策略：动态策略 v2；基础分 ${formatNumber(row.base_score)}，动态分 ${formatNumber(row.dynamic_score)}，综合分 ${formatNumber(row.score)}；动态状态：${row.dynamic_state || "--"}。${row.dynamic_note || ""}动态层不会改变资格和硬风控，只可调整同一资格池内顺序。`
+    : `当前策略：原策略 v1；评分 ${formatNumber(row.score)}。短期联动只作提示，不进入原策略排名。`;
   return [
     `结论：${name}（${code}）截至 ${state.data?.reportDate || "--"} 不进入合格 Top 候选。当前分层：${qualificationLabel(row.qualification || hit.bucket)}；是否可进合格 Top：${row.eligible_for_top === true ? "是" : "否"}。`,
     `核心原因：${reason}`,
     `当前字段：价格 ${formatNumber(row.price)}，转股溢价率 ${formatNumber(row.conversion_premium_rate)}，YTM ${formatNumber(row.ytm)}，评级 ${row.bond_rating || row.rating || "--"}，存续规模 ${formatNumber(row.remaining_size)}，强赎状态 ${row.redemption_status || "--"}，评分 ${formatNumber(row.score)}，评分等级 ${row.score_grade || "--"}，风险等级 ${row.risk_level || "--"}。`,
     `风险备注：${formatNumber(row.quality_notes || row.risk_flags || "--")}`,
-    `短期联动：正股 ${formatNumber(row.stock_daily_return)}%，转债 ${formatNumber(row.bond_daily_return)}%，溢价率变化 ${formatNumber(row.conversion_premium_change)} 个百分点；${row.linkage_note || "暂无异常提示"}。该提示不改变原排名。`,
+    strategyLine,
+    `短期联动原始值：正股 ${formatNumber(row.stock_daily_return)}%，转债 ${formatNumber(row.bond_daily_return)}%，溢价率变化 ${formatNumber(row.conversion_premium_change)} 个百分点。`,
     "规则口径：可转债先做价格、评级、强赎、YTM、溢价率、规模和基本面等风控，再做候选资格分层；弱观察和风险观察不补进合格 Top。",
     "来源：本地 dashboard.convertible_bond、cbExcluded、策略参数。",
   ].join("\n\n");

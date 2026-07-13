@@ -23,5 +23,12 @@ and a waiting status. Once data is present, ranking is deterministic:
    YTM quality, remaining term, credit rating, forced-redemption status,
    remaining scale, and unconverted ratio. Extreme growth, negative profit base,
    high premium, and negative YTM are penalized according to config.
-4. Select Top10 with industry diversification limits. LLMs can explain the
+4. The default `dynamic_v2` plugin keeps that result as `base_score`, calculates
+   a 0-100 short-term score from underlying-stock return, bond return, relative
+   performance, and premium-rate change, then uses 80% base plus 20% dynamic.
+   Missing or inconsistent dynamic fields fall back to the base score. The
+   `legacy_v1` plugin remains selectable and exactly preserves the original score.
+5. Qualification, hard exclusions, risk level, and action always come from the
+   base layer. The dynamic layer can only reorder rows inside the same qualification
+   pool. Select Top10 with industry diversification limits. LLMs can explain the
    resulting rows but cannot change ranks or scores.
