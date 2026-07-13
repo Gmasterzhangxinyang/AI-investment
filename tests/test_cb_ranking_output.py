@@ -126,7 +126,40 @@ def test_score_below_50_cannot_enter_top_candidates() -> None:
     assert qualified.empty
     assert risk_watch.empty
     assert weak_watch.iloc[0]["bond_code"] == "W"
-    assert "评分低于50" in weak_watch.iloc[0]["not_top_reason"]
+    assert "基础分低于50" in weak_watch.iloc[0]["not_top_reason"]
+
+
+def test_base_grade_and_low_score_reason_use_the_same_base_score() -> None:
+    ranked = rank_convertible_bonds(
+        pd.DataFrame(
+            [
+                {
+                    "date": "2026-06-26",
+                    "bond_code": "L",
+                    "bond_name": "低分转债",
+                    "price": 112,
+                    "remaining_years": 2,
+                    "conversion_premium_rate": 34,
+                    "ytm": 6,
+                    "stock_name": "正股L",
+                    "bond_rating": "AA+",
+                    "remaining_size": 8,
+                    "sw_l1": "电子",
+                    "stock_daily_return": 3.0,
+                    "bond_daily_return": 1.0,
+                    "previous_conversion_premium_rate": 36.0,
+                    "conversion_premium_change": -2.0,
+                }
+            ]
+        ),
+        {"convertible_bond": {"active_strategy": "dynamic_v2"}},
+    ).iloc[0]
+
+    assert ranked["score"] == ranked["base_score"]
+    assert ranked["base_grade"] == ranked["score_grade"]
+    if ranked["base_score"] < 30:
+        assert "基础分低于30" in ranked["not_top_reason"]
+    assert "综合分" not in ranked["not_top_reason"]
 
 
 def test_top10_does_not_backfill_from_watch_buckets(tmp_path: Path) -> None:

@@ -248,7 +248,7 @@ def test_linkage_overlay_does_not_change_ranking_or_top_selection(tmp_path: Path
     assert list(base_context.get("cb_top10")["bond_code"]) == list(overlay_context.get("cb_top10")["bond_code"])
 
 
-def test_dynamic_v2_blends_scores_without_changing_qualification_or_action() -> None:
+def test_dynamic_v2_is_auxiliary_only_and_never_changes_base_rank() -> None:
     template = _rankable_rows().iloc[0].to_dict()
     base = pd.DataFrame(
         [
@@ -267,38 +267,43 @@ def test_dynamic_v2_blends_scores_without_changing_qualification_or_action() -> 
         with_linkage,
         {"convertible_bond": {"active_strategy": "legacy_v1", "top_n": 10}},
     )
-    dynamic = rank_convertible_bonds(
+    assisted = rank_convertible_bonds(
         with_linkage,
         {
             "convertible_bond": {
-                "active_strategy": "dynamic_v2",
+                "base_strategy": "legacy_v1",
+                "auxiliary_overlay": {
+                    "enabled": True,
+                    "overlay_id": "dynamic_v2",
+                    "settings": DEFAULT_CONFIG,
+                },
                 "top_n": 10,
-                "strategy_profiles": {"dynamic_v2": {"base_weight": 0.8, "dynamic_weight": 0.2}},
-                "dynamic_scoring": DEFAULT_CONFIG,
             }
         },
     )
 
     legacy_by_code = legacy.set_index("bond_code")
-    dynamic_by_code = dynamic.set_index("bond_code")
-    row = dynamic_by_code.loc["A"]
-    assert row["strategy_id"] == "dynamic_v2"
+    assisted_by_code = assisted.set_index("bond_code")
+    row = assisted_by_code.loc["A"]
+    assert row["strategy_id"] == "legacy_v1"
+    assert row["overlay_id"] == "dynamic_v2"
+    assert bool(row["overlay_enabled"]) is True
     assert row["base_score"] == legacy_by_code.loc["A", "score"]
-    assert row["dynamic_score"] > 50
-    assert row["score"] == round(row["base_score"] * 0.8 + row["dynamic_score"] * 0.2, 2)
-    assert dynamic_by_code["qualification"].to_dict() == legacy_by_code["qualification"].to_dict()
-    assert dynamic_by_code["action"].to_dict() == legacy_by_code["action"].to_dict()
+    assert row["auxiliary_score"] > 50
+    assert row["score"] == row["base_score"]
+    protected = ["score", "base_score", "base_grade", "qualification", "eligible_for_top", "action", "rank"]
+    pd.testing.assert_frame_equal(assisted_by_code[protected], legacy_by_code[protected])
 
 
-def test_dynamic_v2_falls_back_to_base_score_per_row_when_data_is_missing() -> None:
+def test_dynamic_v2_marks_missing_auxiliary_data_without_touching_base_score() -> None:
     ranked = rank_convertible_bonds(
         _rankable_rows(),
         {"convertible_bond": {"active_strategy": "dynamic_v2", "top_n": 10}},
     )
 
-    assert ranked["dynamic_score"].isna().all()
+    assert ranked["auxiliary_score"].isna().all()
     assert (ranked["score"] == ranked["base_score"]).all()
-    assert (ranked["dynamic_data_quality"] == "MISSING").all()
+    assert (ranked["auxiliary_data_quality"] == "MISSING").all()
 
 
 def test_dynamic_scorer_rewards_valid_catch_up() -> None:

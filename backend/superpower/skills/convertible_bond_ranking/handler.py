@@ -6,8 +6,9 @@ import numpy as np
 import pandas as pd
 
 from superpower.runtime.context import AgentContext
-from superpower.skills.convertible_bond_ranking.linkage import classify_linkage, score_dynamic_linkage
-from superpower.skills.convertible_bond_ranking.strategy import cb_strategy_version, normalize_cb_config
+from superpower.skills.convertible_bond_ranking.linkage import classify_linkage
+from superpower.skills.convertible_bond_ranking.registry import default_cb_registry
+from superpower.skills.convertible_bond_ranking.strategy import normalize_cb_config
 
 
 OUTPUT_COLUMNS = [
@@ -62,7 +63,17 @@ OUTPUT_COLUMNS = [
     "strategy_id",
     "strategy_version",
     "strategy_fallback_reason",
+    "overlay_id",
+    "overlay_version",
+    "overlay_enabled",
+    "overlay_fallback_reason",
     "base_score",
+    "base_grade",
+    "auxiliary_score",
+    "auxiliary_state",
+    "auxiliary_note",
+    "auxiliary_data_quality",
+    "auxiliary_components",
     "dynamic_score",
     "dynamic_state",
     "dynamic_note",
@@ -324,7 +335,8 @@ def rank_convertible_bonds(
     eligible["metrics"] = [_metrics(row) for _, row in eligible.iterrows()]
     eligible["rule_hits"] = [_rule_hits(row) for _, row in eligible.iterrows()]
     eligible["risk_notes"] = eligible["risk_flags"].map(_risk_note_list)
-    eligible["score_grade"] = eligible["score"].map(_score_grade)
+    eligible["base_grade"] = eligible["base_score"].map(_score_grade)
+    eligible["score_grade"] = eligible["base_grade"]
     eligible["quality_notes"] = [_quality_notes(row) for _, row in eligible.iterrows()]
     qualification = [_qualification(row) for _, row in eligible.iterrows()]
     eligible["qualification"] = [item["qualification"] for item in qualification]
@@ -353,52 +365,62 @@ def rank_convertible_bonds(
     for field in ("linkage_state", "linkage_note", "linkage_is_abnormal", "linkage_data_quality"):
         eligible[field] = [result[field] for result in linkage_results]
 
-    active_strategy = str(strategy_config["active_strategy"])
-    eligible["strategy_id"] = active_strategy
-    eligible["strategy_version"] = cb_strategy_version(active_strategy)
+    registry = default_cb_registry()
+    base_strategy = registry.base(str(strategy_config["base_strategy"]))
+    overlay_config = strategy_config["auxiliary_overlay"]
+    overlay_enabled = bool(overlay_config["enabled"])
+    eligible["strategy_id"] = base_strategy.strategy_id
+    eligible["strategy_version"] = base_strategy.version
     eligible["strategy_fallback_reason"] = ""
+    eligible["overlay_id"] = str(overlay_config["overlay_id"])
+    eligible["overlay_version"] = ""
+    eligible["overlay_enabled"] = overlay_enabled
+    eligible["overlay_fallback_reason"] = ""
+    eligible["auxiliary_score"] = np.nan
+    eligible["auxiliary_state"] = "未启用"
+    eligible["auxiliary_note"] = ""
+    eligible["auxiliary_data_quality"] = "DISABLED"
+    eligible["auxiliary_components"] = [{} for _ in range(len(eligible))]
     eligible["dynamic_score"] = np.nan
     eligible["dynamic_state"] = ""
     eligible["dynamic_note"] = ""
     eligible["dynamic_data_quality"] = "DISABLED"
     eligible["dynamic_components"] = [{} for _ in range(len(eligible))]
-    if active_strategy == "dynamic_v2":
+    if overlay_enabled:
         try:
-            dynamic_results = [
-                score_dynamic_linkage(row, config.get("dynamic_scoring", {}))
+            overlay = registry.overlay(str(overlay_config["overlay_id"]))
+            eligible["overlay_version"] = overlay.version
+            overlay_settings = dict(overlay_config.get("settings") or config.get("dynamic_scoring", {}))
+            auxiliary_results = [
+                overlay.evaluate(row, overlay_settings)
                 for _, row in eligible.iterrows()
             ]
-            for field in ("dynamic_score", "dynamic_state", "dynamic_note", "dynamic_data_quality", "dynamic_components"):
-                eligible[field] = [result[field] for result in dynamic_results]
-            profile = strategy_config["strategy_profiles"]["dynamic_v2"]
-            valid_dynamic = pd.to_numeric(eligible["dynamic_score"], errors="coerce").notna()
-            eligible.loc[valid_dynamic, "score"] = (
-                eligible.loc[valid_dynamic, "base_score"] * float(profile["base_weight"])
-                + pd.to_numeric(eligible.loc[valid_dynamic, "dynamic_score"], errors="coerce")
-                * float(profile["dynamic_weight"])
-            ).round(2)
-            eligible.loc[~valid_dynamic, "score"] = eligible.loc[~valid_dynamic, "base_score"]
+            for field in (
+                "auxiliary_score",
+                "auxiliary_state",
+                "auxiliary_note",
+                "auxiliary_data_quality",
+                "auxiliary_components",
+            ):
+                eligible[field] = [result[field] for result in auxiliary_results]
         except Exception as exc:
-            eligible["strategy_id"] = "legacy_v1"
-            eligible["strategy_version"] = cb_strategy_version("legacy_v1")
-            eligible["strategy_fallback_reason"] = f"dynamic_v2_failed: {type(exc).__name__}"
-            eligible["score"] = eligible["base_score"]
-            eligible["dynamic_data_quality"] = "FALLBACK"
+            eligible["overlay_enabled"] = False
+            eligible["overlay_fallback_reason"] = f"{overlay_config['overlay_id']}_failed: {type(exc).__name__}"
+            eligible["auxiliary_state"] = "数据不足"
+            eligible["auxiliary_data_quality"] = "FALLBACK"
+
+    eligible["score"] = eligible["base_score"]
+    eligible["dynamic_score"] = eligible["auxiliary_score"]
+    eligible["dynamic_state"] = eligible["auxiliary_state"]
+    eligible["dynamic_note"] = eligible["auxiliary_note"]
+    eligible["dynamic_data_quality"] = eligible["auxiliary_data_quality"]
+    eligible["dynamic_components"] = eligible["auxiliary_components"]
 
     output = eligible[OUTPUT_COLUMNS].copy()
-    if active_strategy == "dynamic_v2" and (output["strategy_id"] == "dynamic_v2").all():
-        output["_qualification_order"] = output["qualification"].map(
-            {"qualified": 0, "weak_watch": 1, "risk_watch": 2}
-        ).fillna(3)
-        output = output.sort_values(
-            ["_qualification_order", "score", "credit_score", "redemption_score", "conversion_premium_rate"],
-            ascending=[True, False, False, False, True],
-        ).drop(columns="_qualification_order").reset_index(drop=True)
-    else:
-        output = output.sort_values(
-            ["score", "credit_score", "redemption_score", "conversion_premium_rate"],
-            ascending=[False, False, False, True],
-        ).reset_index(drop=True)
+    output = output.sort_values(
+        ["score", "credit_score", "redemption_score", "conversion_premium_rate"],
+        ascending=[False, False, False, True],
+    ).reset_index(drop=True)
     output["rank"] = np.arange(1, len(output) + 1)
     return (output, excluded) if include_excluded else output
 
@@ -894,8 +916,12 @@ def split_candidate_qualification(ranked: pd.DataFrame) -> tuple[pd.DataFrame, p
 
 def _ensure_qualification_columns(ranked: pd.DataFrame) -> pd.DataFrame:
     ranked = ranked.copy()
+    if "base_score" not in ranked.columns:
+        ranked["base_score"] = ranked.get("score", pd.Series(dtype=float))
+    if "base_grade" not in ranked.columns:
+        ranked["base_grade"] = ranked["base_score"].map(_score_grade)
     if "score_grade" not in ranked.columns:
-        ranked["score_grade"] = ranked.get("score", pd.Series(dtype=float)).map(_score_grade)
+        ranked["score_grade"] = ranked["base_grade"]
     if "quality_notes" not in ranked.columns:
         ranked["quality_notes"] = [_quality_notes(row) for _, row in ranked.iterrows()]
     needs_qualification = (
@@ -933,7 +959,7 @@ def _qualification_summary(
         if max_score is None:
             message = "今日无合格可转债 Top 候选，候选池整体质量偏弱。"
         else:
-            message = f"今日无合格可转债 Top 候选；最高分仅 {max_score:.2f}，未达到合格候选阈值；候选池整体质量偏弱。"
+            message = f"今日无合格可转债 Top 候选；最高基础分仅 {max_score:.2f}，未达到合格候选阈值；候选池整体质量偏弱。"
     return {
         "qualified_count": qualified_count,
         "weak_watch_count": len(weak_watch),
@@ -971,7 +997,7 @@ def _qualification(row: pd.Series) -> dict[str, Any]:
         return {"qualification": "qualified", "eligible_for_top": True, "not_top_reason": ""}
     weak_reasons: list[str] = []
     if pd.notna(score) and score < 50:
-        weak_reasons.append("评分低于50，仅可弱观察")
+        weak_reasons.append("基础分低于50，仅可弱观察")
     weak_reasons.extend(top_reasons)
     return {
         "qualification": "weak_watch",
@@ -988,7 +1014,7 @@ def _top_ineligible_reasons(row: pd.Series) -> list[str]:
     remaining_size = _num(row.get("remaining_size"))
     flags = str(row.get("risk_flags") or "")
     if pd.isna(score) or score < 50:
-        reasons.append("评分低于50")
+        reasons.append("基础分低于50")
     if str(row.get("risk_level")) == "高":
         reasons.append("风险等级为高")
     if pd.notna(premium) and premium > 35:
@@ -1011,9 +1037,9 @@ def _risk_watch_reasons(row: pd.Series, risk_note_count: int) -> list[str]:
     ytm = _num(row.get("ytm"))
     remaining_size = _num(row.get("remaining_size"))
     if pd.notna(score) and score < 30:
-        reasons.append("评分低于30")
+        reasons.append("基础分低于30")
     if pd.notna(score) and score == 0:
-        reasons.append("评分为0")
+        reasons.append("基础分为0")
     if str(row.get("risk_level")) == "高":
         reasons.append("风险等级为高")
     if risk_note_count >= 3:
