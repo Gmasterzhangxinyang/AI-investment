@@ -51,9 +51,13 @@
   }
 
   function tableColumnClass(key) {
-    return ["signal_reason", "watch_type", "missing_condition", "suggested_action", "decision_reason", "risk_overlay_summary", "fund_flow_note"].includes(key)
+    return ["signal_reason", "watch_type", "missing_condition", "suggested_action", "decision_reason", "risk_overlay_summary", "fund_flow_note", "linkage_note"].includes(key)
       ? "long-text-column"
       : "";
+  }
+
+  function linkageStateLabel(value) {
+    return ["正常联动", "数据不足", "未启用", "", null, undefined].includes(value) ? "--" : value;
   }
 
   function strategyStateLabel(key, value) {
@@ -127,5 +131,5 @@
       .sort((left, right) => left.horizon - right.horizon || left.strategy_id.localeCompare(right.strategy_id));
   }
 
-  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, tableColumnClass, strategyStateLabel, historicalComparisonRows };
+  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, tableColumnClass, strategyStateLabel, linkageStateLabel, historicalComparisonRows };
 });

@@ -75,6 +75,11 @@ def test_single_convertible_answer_uses_dashboard_exclusion_reason_without_llm()
                         "score_grade": "E",
                         "not_top_reason": "转股溢价率54.61%过高",
                         "quality_notes": ["转股溢价率54.61%过高"],
+                        "stock_daily_return": 3.2,
+                        "bond_daily_return": 0.8,
+                        "conversion_premium_change": -2.4,
+                        "linkage_state": "关注补涨",
+                        "linkage_note": "正股偏强、转债跟涨不足且溢价收缩，关注后续是否补涨；不改变原排名。",
                         "detail_source": "dashboard",
                     },
                 },
@@ -89,3 +94,7 @@ def test_single_convertible_answer_uses_dashboard_exclusion_reason_without_llm()
     assert "是否可进合格 Top：否" in answer
     assert "转股溢价率54.61%过高" in answer
     assert "弱观察和风险观察不补进合格 Top" in answer
+    assert "正股 3.2%" in answer
+    assert "转债 0.8%" in answer
+    assert "溢价率变化 -2.4 个百分点" in answer
+    assert "不改变原排名" in answer

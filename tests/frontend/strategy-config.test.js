@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, tableColumnClass, strategyStateLabel, historicalComparisonRows } = require("../../frontend/assets/strategy-config.js");
+const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, tableColumnClass, strategyStateLabel, linkageStateLabel, historicalComparisonRows } = require("../../frontend/assets/strategy-config.js");
 
 test("deepMerge preserves dormant profiles and replaces arrays", () => {
   const current = { etf: { diagnostic_strategies: ["legacy_v1"], strategy_profiles: { future_v3: { kept: true } } } };
@@ -52,7 +52,15 @@ test("ETF explanation columns receive a wrapping class", () => {
   assert.equal(tableColumnClass("suggested_action"), "long-text-column");
   assert.equal(tableColumnClass("risk_overlay_summary"), "long-text-column");
   assert.equal(tableColumnClass("fund_flow_note"), "long-text-column");
+  assert.equal(tableColumnClass("linkage_note"), "long-text-column");
   assert.equal(tableColumnClass("score"), "");
+});
+
+test("convertible linkage state hides normal noise and keeps warnings", () => {
+  assert.equal(linkageStateLabel("正常联动"), "--");
+  assert.equal(linkageStateLabel("数据不足"), "--");
+  assert.equal(linkageStateLabel("关注补涨"), "关注补涨");
+  assert.equal(linkageStateLabel("谨慎追涨"), "谨慎追涨");
 });
 
 test("strategy state codes render as concise Chinese labels", () => {

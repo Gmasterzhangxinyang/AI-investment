@@ -75,8 +75,10 @@ const formatNumber = (value) => {
 
 const formatValue = (key, value) => {
   if ((key === "date" || key.endsWith("_date")) && typeof value === "string") return value.slice(0, 10);
+  if ((key === "stock_daily_return" || key === "bond_daily_return") && typeof value === "number") return `${value.toFixed(2)}%`;
   if (key.includes("return") && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
   if (key === "medium_status" || key === "short_entry_status") return ETFStrategyConfig.strategyStateLabel(key, value);
+  if (key === "linkage_state") return ETFStrategyConfig.linkageStateLabel(value);
   return formatNumber(value);
 };
 
@@ -456,6 +458,11 @@ function renderAssetDetail() {
       ["强赎状态", cbRow.redemption_status],
       ["风险等级", cbRow.risk_level],
       ["风险提示", cbRow.quality_notes || cbRow.risk_flags],
+      ["正股当日涨幅", cbRow.stock_daily_return],
+      ["转债当日涨幅", cbRow.bond_daily_return],
+      ["溢价率当日变化", cbRow.conversion_premium_change],
+      ["短期联动", ETFStrategyConfig.linkageStateLabel(cbRow.linkage_state)],
+      ["联动提示", cbRow.linkage_note || "暂无异常提示；不改变原排名"],
       ["评分依据", cbRow.rank_reason],
       ["数据来源", snapshot.bond_code ? "数据库快照" : "当前 dashboard"],
     ];
@@ -469,6 +476,10 @@ function renderAssetDetail() {
       ["excluded_reason", "排除原因"],
       ["price", "价格"],
       ["conversion_premium_rate", "转股溢价率"],
+      ["stock_daily_return", "正股当日涨幅"],
+      ["bond_daily_return", "转债当日涨幅"],
+      ["conversion_premium_change", "溢价率变化"],
+      ["linkage_state", "短期联动"],
       ["ytm", "到期收益率"],
       ["deducted_profit_growth", "扣非增速"],
       ["score", "评分"],
@@ -1038,6 +1049,8 @@ function render() {
     ["qualification", "资格"],
     ["not_top_reason", "未入Top原因"],
     ["risk_flags", "风险提示"],
+    ["linkage_state", "短期联动"],
+    ["linkage_note", "联动提示"],
     ["rank_reason", "评分依据"],
   ];
   const cb = data.convertible_bond || {};
@@ -2107,6 +2120,7 @@ function localConvertibleAnswer(question) {
     `核心原因：${reason}`,
     `当前字段：价格 ${formatNumber(row.price)}，转股溢价率 ${formatNumber(row.conversion_premium_rate)}，YTM ${formatNumber(row.ytm)}，评级 ${row.bond_rating || row.rating || "--"}，存续规模 ${formatNumber(row.remaining_size)}，强赎状态 ${row.redemption_status || "--"}，评分 ${formatNumber(row.score)}，评分等级 ${row.score_grade || "--"}，风险等级 ${row.risk_level || "--"}。`,
     `风险备注：${formatNumber(row.quality_notes || row.risk_flags || "--")}`,
+    `短期联动：正股 ${formatNumber(row.stock_daily_return)}%，转债 ${formatNumber(row.bond_daily_return)}%，溢价率变化 ${formatNumber(row.conversion_premium_change)} 个百分点；${row.linkage_note || "暂无异常提示"}。该提示不改变原排名。`,
     "规则口径：可转债先做价格、评级、强赎、YTM、溢价率、规模和基本面等风控，再做候选资格分层；弱观察和风险观察不补进合格 Top。",
     "来源：本地 dashboard.convertible_bond、cbExcluded、策略参数。",
   ].join("\n\n");

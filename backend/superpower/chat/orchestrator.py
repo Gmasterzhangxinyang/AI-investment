@@ -549,6 +549,10 @@ class ChatOrchestrator:
         grade = str(row.get("score_grade") or "--")
         risk = str(row.get("risk_level") or "--")
         notes = self._fmt_notes(row.get("quality_notes") or row.get("risk_flags"))
+        stock_return = self._fmt_metric(row.get("stock_daily_return"))
+        bond_return = self._fmt_metric(row.get("bond_daily_return"))
+        premium_change = self._fmt_metric(row.get("conversion_premium_change"))
+        linkage_note = str(row.get("linkage_note") or "暂无异常提示")
         source = str(row.get("detail_source") or ("sqlite_snapshot" if snapshot else "dashboard"))
 
         return "\n\n".join(
@@ -560,6 +564,7 @@ class ChatOrchestrator:
                     f"存续规模 {size}，强赎状态 {redemption}，评分 {score}，评分等级 {grade}，风险等级 {risk}。"
                 ),
                 f"风险备注：{notes or '--'}",
+                f"短期联动：正股 {stock_return}%，转债 {bond_return}%，溢价率变化 {premium_change} 个百分点；{linkage_note}。该提示不改变原排名。",
                 "规则口径：可转债先做价格、评级、强赎、YTM、溢价率、规模和基本面等风控，再做候选资格分层；弱观察和风险观察不补进合格 Top。",
                 f"来源：{source}、dashboard.convertible_bond、SQLite asset_master、configs/strategy_params.json。",
             ]

@@ -23,3 +23,11 @@ def test_etf_main_page_does_not_show_historical_diagnostics() -> None:
     assert "历史表现诊断" not in html
     assert "etf-history-highlights" not in html
     assert "etf-history-table" not in html
+
+
+def test_convertible_page_exposes_short_term_linkage_without_changing_rank_copy() -> None:
+    app = (ROOT / "frontend" / "assets" / "app.js").read_text(encoding="utf-8")
+
+    assert '["linkage_state", "短期联动"]' in app
+    assert '["linkage_note", "联动提示"]' in app
+    assert "该提示不改变原排名" in app
