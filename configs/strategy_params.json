@@ -65,6 +65,14 @@
     }
   },
   "convertible_bond": {
+    "active_strategy": "dynamic_v2",
+    "strategy_profiles": {
+      "legacy_v1": {},
+      "dynamic_v2": {
+        "base_weight": 0.8,
+        "dynamic_weight": 0.2
+      }
+    },
     "price_limit": 140,
     "min_price": 100,
     "top_n": 10,

@@ -22,6 +22,7 @@ from superpower.chat import ChatOrchestrator
 from superpower.chat.schemas import ChatRequest
 from superpower.db import DatabaseRepository
 from superpower.skills.ai_research_committee.handler import COMMITTEE_LLM_TIMEOUT_SECONDS, COMMITTEE_ROLES
+from superpower.skills.convertible_bond_ranking.strategy import cb_strategy_metadata, normalize_cb_config
 from superpower.skills.etf_rotation_strategy.config import (
     etf_config_hash,
     merge_strategy_params,
@@ -752,6 +753,7 @@ def _validate_strategy_params(params: dict[str, Any]) -> None:
         raise ValueError("Convertible bond min_price must be below price_limit.")
     normalized = normalize_etf_config(params)
     validate_all_etf_profiles(normalized)
+    normalize_cb_config(params)
 
 
 def _strategy_params_payload(params: dict[str, Any]) -> dict[str, Any]:
@@ -766,10 +768,20 @@ def _strategy_params_payload(params: dict[str, Any]) -> dict[str, Any]:
         }
         for item in default_registry().metadata()
     ]
+    cb_strategies = [
+        {
+            "strategy_id": item.strategy_id,
+            "display_name": item.display_name,
+            "version": item.version,
+            "default_params": item.default_params,
+        }
+        for item in cb_strategy_metadata()
+    ]
     return {
         "status": "success",
         "params": params,
         "etfStrategies": strategies,
+        "cbStrategies": cb_strategies,
         "etfConfigHash": etf_config_hash(normalized),
     }
 
