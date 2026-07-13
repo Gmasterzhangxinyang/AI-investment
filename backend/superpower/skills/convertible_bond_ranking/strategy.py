@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+import hashlib
+import json
 from typing import Any, Mapping
 
 
@@ -41,6 +43,21 @@ def normalize_cb_config(params: Mapping[str, Any]) -> dict[str, Any]:
     if active_strategy not in KNOWN_CB_STRATEGY_IDS:
         raise CBConfigurationError(f"unknown active convertible-bond strategy: {active_strategy}")
 
+    base_strategy = str(config.get("base_strategy") or "legacy_v1")
+    if base_strategy != "legacy_v1":
+        raise CBConfigurationError(f"unknown convertible-bond base strategy: {base_strategy}")
+    raw_overlay = config.get("auxiliary_overlay")
+    if raw_overlay is not None and not isinstance(raw_overlay, Mapping):
+        raise CBConfigurationError("convertible_bond.auxiliary_overlay must be an object")
+    overlay = deepcopy(dict(raw_overlay or {}))
+    overlay_id = str(overlay.get("overlay_id") or "dynamic_v2")
+    if overlay_id != "dynamic_v2":
+        raise CBConfigurationError(f"unknown convertible-bond auxiliary overlay: {overlay_id}")
+    overlay_enabled = bool(overlay.get("enabled", active_strategy == "dynamic_v2"))
+    settings = overlay.get("settings") or {}
+    if not isinstance(settings, Mapping):
+        raise CBConfigurationError("convertible_bond.auxiliary_overlay.settings must be an object")
+
     profiles = deepcopy(dict(config.get("strategy_profiles") or {}))
     profiles.setdefault("legacy_v1", {})
     dynamic = dict(profiles.get("dynamic_v2") or {})
@@ -55,7 +72,20 @@ def normalize_cb_config(params: Mapping[str, Any]) -> dict[str, Any]:
     }
     config["active_strategy"] = active_strategy
     config["strategy_profiles"] = profiles
+    config["base_strategy"] = base_strategy
+    config["auxiliary_overlay"] = {
+        "enabled": overlay_enabled,
+        "overlay_id": overlay_id,
+        "settings": deepcopy(dict(settings)),
+    }
     return config
+
+
+def cb_config_hash(params: Mapping[str, Any]) -> str:
+    source = params if "convertible_bond" in params else {"convertible_bond": params}
+    normalized = normalize_cb_config(source)
+    payload = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def cb_strategy_version(strategy_id: str) -> str:
