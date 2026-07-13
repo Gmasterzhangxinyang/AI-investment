@@ -545,28 +545,24 @@ class ChatOrchestrator:
         rating = str(row.get("bond_rating") or row.get("rating") or "--")
         size = self._fmt_metric(row.get("remaining_size"))
         redemption = str(row.get("redemption_status") or "--")
-        score = self._fmt_metric(row.get("score", snapshot.get("score")))
-        grade = str(row.get("score_grade") or "--")
+        base_score = self._fmt_metric(row.get("base_score", row.get("score", snapshot.get("score"))))
+        grade = str(row.get("base_grade") or row.get("score_grade") or "--")
         risk = str(row.get("risk_level") or "--")
         notes = self._fmt_notes(row.get("quality_notes") or row.get("risk_flags"))
         stock_return = self._fmt_metric(row.get("stock_daily_return"))
         bond_return = self._fmt_metric(row.get("bond_daily_return"))
         premium_change = self._fmt_metric(row.get("conversion_premium_change"))
         linkage_note = str(row.get("linkage_note") or "暂无异常提示")
-        strategy_id = str(row.get("strategy_id") or "legacy_v1")
-        base_score = self._fmt_metric(row.get("base_score", row.get("score", snapshot.get("score"))))
-        dynamic_score = self._fmt_metric(row.get("dynamic_score"))
-        dynamic_state = str(row.get("dynamic_state") or row.get("linkage_state") or "--")
-        dynamic_note = str(row.get("dynamic_note") or linkage_note)
+        auxiliary_score = self._fmt_metric(row.get("auxiliary_score", row.get("dynamic_score")))
+        auxiliary_state = str(row.get("auxiliary_state") or row.get("dynamic_state") or row.get("linkage_state") or "--")
+        auxiliary_note = str(row.get("auxiliary_note") or row.get("dynamic_note") or linkage_note)
         source = str(row.get("detail_source") or ("sqlite_snapshot" if snapshot else "dashboard"))
 
-        if strategy_id == "dynamic_v2":
-            strategy_line = (
-                f"当前策略：动态策略 v2；基础分 {base_score}，动态分 {dynamic_score}，综合分 {score}；"
-                f"动态状态：{dynamic_state}。{dynamic_note}动态层不会改变资格和硬风控，只可调整同一资格池内顺序。"
-            )
-        else:
-            strategy_line = f"当前策略：原策略 v1；评分 {score}。短期联动只作提示，不进入原策略排名。"
+        strategy_line = (
+            f"当前基础策略：原策略 v1；基础分 {base_score}，基础等级 {grade}。"
+            f"动态辅助：{auxiliary_state}，辅助分 {auxiliary_score}。{auxiliary_note}"
+            "动态辅助不改变资格、动作和排名。"
+        )
 
         return "\n\n".join(
             [
@@ -574,11 +570,11 @@ class ChatOrchestrator:
                 f"核心原因：{reason}",
                 (
                     f"当前字段：价格 {price}，转股溢价率 {premium}，YTM {ytm}，评级 {rating}，"
-                    f"存续规模 {size}，强赎状态 {redemption}，评分 {score}，评分等级 {grade}，风险等级 {risk}。"
+                    f"存续规模 {size}，强赎状态 {redemption}，基础分 {base_score}，基础等级 {grade}，风险等级 {risk}。"
                 ),
                 f"风险备注：{notes or '--'}",
                 strategy_line,
-                f"短期联动原始值：正股 {stock_return}%，转债 {bond_return}%，溢价率变化 {premium_change} 个百分点。",
+                f"动态辅助原始值：正股 {stock_return}%，转债 {bond_return}%，溢价率变化 {premium_change} 个百分点。",
                 "规则口径：可转债先做价格、评级、强赎、YTM、溢价率、规模和基本面等风控，再做候选资格分层；弱观察和风险观察不补进合格 Top。",
                 f"来源：{source}、dashboard.convertible_bond、SQLite asset_master、configs/strategy_params.json。",
             ]

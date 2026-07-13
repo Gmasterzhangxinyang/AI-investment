@@ -195,8 +195,16 @@ Convertible-bond rows additionally carry candidate-quality fields:
 ```text
 qualification
 score_grade
+base_score
+base_grade
 eligible_for_top
 not_top_reason
+auxiliary_score
+auxiliary_state
+auxiliary_note
+auxiliary_data_quality
+config_hash
+source_date
 quality_notes
 ```
 

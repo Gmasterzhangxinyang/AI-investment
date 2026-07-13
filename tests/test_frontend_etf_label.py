@@ -28,7 +28,7 @@ def test_etf_main_page_does_not_show_historical_diagnostics() -> None:
 def test_convertible_page_explains_dynamic_and_legacy_ranking_boundaries() -> None:
     app = (ROOT / "frontend" / "assets" / "app.js").read_text(encoding="utf-8")
 
-    assert '["linkage_state", "短期联动"]' in app
-    assert '["linkage_note", "联动提示"]' in app
-    assert "动态层不会改变资格和硬风控，只可调整同一资格池内顺序" in app
-    assert "短期联动只作提示，不进入原策略排名" in app
+    assert '["auxiliary_state", "动态辅助"]' in app
+    assert "动态辅助不改变资格、动作和排名" in app
+    assert '["score", "综合分"]' not in app
+    assert '["dynamic_state", "动态状态"]' not in app
