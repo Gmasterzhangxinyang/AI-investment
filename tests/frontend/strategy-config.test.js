@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, historicalComparisonRows } = require("../../frontend/assets/strategy-config.js");
+const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, historicalComparisonRows } = require("../../frontend/assets/strategy-config.js");
 
 test("deepMerge preserves dormant profiles and replaces arrays", () => {
   const current = { etf: { diagnostic_strategies: ["legacy_v1"], strategy_profiles: { future_v3: { kept: true } } } };
@@ -40,6 +40,12 @@ test("convertible dynamic columns follow generated result identity", () => {
   assert.equal(showCbDynamicColumns({ strategy_id: "dynamic_v2", strategy_version: "2.0.0" }), true);
   assert.equal(showCbDynamicColumns({ strategy_id: "legacy_v1", strategy_version: "1.0.0" }), false);
   assert.equal(showCbDynamicColumns(null), false);
+});
+
+test("legacy linkage columns are hidden for dynamic v2", () => {
+  assert.equal(showCbLegacyLinkageColumns({ strategy_id: "dynamic_v2" }), false);
+  assert.equal(showCbLegacyLinkageColumns({ strategy_id: "legacy_v1" }), true);
+  assert.equal(showCbLegacyLinkageColumns(null), true);
 });
 
 test("saved config newer than dashboard waits for refresh", () => {

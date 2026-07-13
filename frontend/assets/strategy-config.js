@@ -61,6 +61,10 @@
     return generated?.strategy_id === "dynamic_v2";
   }
 
+  function showCbLegacyLinkageColumns(generated) {
+    return generated?.strategy_id !== "dynamic_v2";
+  }
+
   function tableColumnClass(key) {
     return ["signal_reason", "watch_type", "missing_condition", "suggested_action", "decision_reason", "risk_overlay_summary", "fund_flow_note", "linkage_note"].includes(key)
       ? "long-text-column"
@@ -142,5 +146,5 @@
       .sort((left, right) => left.horizon - right.horizon || left.strategy_id.localeCompare(right.strategy_id));
   }
 
-  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, historicalComparisonRows };
+  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, historicalComparisonRows };
 });

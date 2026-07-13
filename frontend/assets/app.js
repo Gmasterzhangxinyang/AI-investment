@@ -1060,6 +1060,7 @@ function render() {
   ];
   const cb = data.convertible_bond || {};
   const showCbDynamic = ETFStrategyConfig.showCbDynamicColumns(cb.strategy);
+  const showCbLegacyLinkage = ETFStrategyConfig.showCbLegacyLinkageColumns(cb.strategy);
   const cbColumns = [
     ["rank", "排名"],
     ["bond_name", "转债"],
@@ -1087,8 +1088,12 @@ function render() {
     ["qualification", "资格"],
     ["not_top_reason", "未入Top原因"],
     ["risk_flags", "风险提示"],
-    ["linkage_state", "短期联动"],
-    ["linkage_note", "联动提示"],
+    ...(showCbLegacyLinkage
+      ? [
+          ["linkage_state", "短期联动"],
+          ["linkage_note", "联动提示"],
+        ]
+      : []),
     ["rank_reason", "评分依据"],
   ];
   const cbSummary = cb.summary || {};
