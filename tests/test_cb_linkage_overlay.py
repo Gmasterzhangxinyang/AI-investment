@@ -11,7 +11,7 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from superpower.tools.excel_reader import parse_convertible_bond_excel
-from superpower.skills.convertible_bond_ranking.linkage import classify_linkage
+from superpower.skills.convertible_bond_ranking.linkage import classify_linkage, score_dynamic_linkage
 from superpower.runtime.context import AgentContext
 from superpower.skills.convertible_bond_ranking.handler import Skill, rank_convertible_bonds
 
@@ -25,6 +25,15 @@ DEFAULT_CONFIG = {
     "relative_gap_threshold": 2.0,
     "premium_expand_threshold": 2.0,
     "premium_compress_threshold": -2.0,
+    "component_weights": {
+        "stock": 0.2,
+        "bond": 0.15,
+        "relative": 0.3,
+        "premium_change": 0.35,
+    },
+    "return_score_range": 5.0,
+    "relative_score_range": 4.0,
+    "premium_change_score_range": 4.0,
 }
 
 
@@ -237,3 +246,68 @@ def test_linkage_overlay_does_not_change_ranking_or_top_selection(tmp_path: Path
     Skill().run(overlay_context)
 
     assert list(base_context.get("cb_top10")["bond_code"]) == list(overlay_context.get("cb_top10")["bond_code"])
+
+
+def test_dynamic_scorer_rewards_valid_catch_up() -> None:
+    result = score_dynamic_linkage(
+        _linkage_row(
+            conversion_premium_rate=23.0,
+            stock_daily_return=3.0,
+            bond_daily_return=1.0,
+            previous_conversion_premium_rate=25.0,
+            conversion_premium_change=-2.0,
+        ),
+        DEFAULT_CONFIG,
+    )
+
+    assert result["dynamic_state"] == "关注补涨"
+    assert result["dynamic_score"] > 50
+    assert set(result["dynamic_components"]) == {"stock", "bond", "relative", "premium_change"}
+
+
+def test_dynamic_scorer_penalizes_chase_and_joint_weakness() -> None:
+    chase = score_dynamic_linkage(
+        _linkage_row(
+            conversion_premium_rate=27.0,
+            stock_daily_return=1.0,
+            bond_daily_return=3.0,
+            previous_conversion_premium_rate=25.0,
+            conversion_premium_change=2.0,
+        ),
+        DEFAULT_CONFIG,
+    )
+    weakness = score_dynamic_linkage(
+        _linkage_row(
+            conversion_premium_rate=24.0,
+            stock_daily_return=-3.0,
+            bond_daily_return=-2.0,
+            previous_conversion_premium_rate=25.0,
+            conversion_premium_change=-1.0,
+        ),
+        DEFAULT_CONFIG,
+    )
+
+    assert chase["dynamic_state"] == "谨慎追涨"
+    assert weakness["dynamic_state"] == "联动走弱"
+    assert chase["dynamic_score"] < 50
+    assert weakness["dynamic_score"] < 50
+
+
+def test_dynamic_scorer_returns_none_when_data_is_missing_or_inconsistent() -> None:
+    missing = score_dynamic_linkage(
+        _linkage_row(stock_daily_return=None, conversion_premium_change=None),
+        DEFAULT_CONFIG,
+    )
+    inconsistent = score_dynamic_linkage(
+        _linkage_row(
+            conversion_premium_rate=30.0,
+            previous_conversion_premium_rate=25.0,
+            conversion_premium_change=2.0,
+        ),
+        DEFAULT_CONFIG,
+    )
+
+    assert missing["dynamic_score"] is None
+    assert missing["dynamic_data_quality"] == "MISSING"
+    assert inconsistent["dynamic_score"] is None
+    assert inconsistent["dynamic_data_quality"] == "REVIEW"

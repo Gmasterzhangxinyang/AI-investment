@@ -125,6 +125,25 @@
       "premium_expand_threshold": 2.0,
       "premium_compress_threshold": -2.0
     },
+    "dynamic_scoring": {
+      "validation_tolerance": 0.05,
+      "stock_strong_threshold": 3.0,
+      "stock_weak_threshold": -3.0,
+      "bond_strong_threshold": 3.0,
+      "bond_weak_threshold": -2.0,
+      "relative_gap_threshold": 2.0,
+      "premium_expand_threshold": 2.0,
+      "premium_compress_threshold": -2.0,
+      "return_score_range": 5.0,
+      "relative_score_range": 4.0,
+      "premium_change_score_range": 4.0,
+      "component_weights": {
+        "stock": 0.2,
+        "bond": 0.15,
+        "relative": 0.3,
+        "premium_change": 0.35
+      }
+    },
     "score_weights": {
       "fundamental": 0.25,
       "premium": 0.2,

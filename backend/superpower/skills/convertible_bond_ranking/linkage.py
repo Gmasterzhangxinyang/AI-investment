@@ -16,6 +16,19 @@ DEFAULT_LINKAGE_CONFIG: dict[str, float] = {
     "premium_compress_threshold": -2.0,
 }
 
+DEFAULT_DYNAMIC_CONFIG: dict[str, Any] = {
+    **DEFAULT_LINKAGE_CONFIG,
+    "component_weights": {
+        "stock": 0.2,
+        "bond": 0.15,
+        "relative": 0.3,
+        "premium_change": 0.35,
+    },
+    "return_score_range": 5.0,
+    "relative_score_range": 4.0,
+    "premium_change_score_range": 4.0,
+}
+
 
 def classify_linkage(row: Mapping[str, Any], config: Mapping[str, Any] | None = None) -> dict[str, object]:
     thresholds = {**DEFAULT_LINKAGE_CONFIG, **dict(config or {})}
@@ -71,6 +84,58 @@ def classify_linkage(row: Mapping[str, Any], config: Mapping[str, Any] | None = 
         )
 
     return _result("正常联动", "", False, "OK")
+
+
+def score_dynamic_linkage(row: Mapping[str, Any], config: Mapping[str, Any] | None = None) -> dict[str, object]:
+    settings = {**DEFAULT_DYNAMIC_CONFIG, **dict(config or {})}
+    classified = classify_linkage(row, settings)
+    if classified["linkage_data_quality"] != "OK":
+        return {
+            "dynamic_score": None,
+            "dynamic_state": classified["linkage_state"],
+            "dynamic_note": classified["linkage_note"],
+            "dynamic_data_quality": classified["linkage_data_quality"],
+            "dynamic_components": {},
+        }
+
+    stock_return = float(row["stock_daily_return"])
+    bond_return = float(row["bond_daily_return"])
+    premium_change = float(row["conversion_premium_change"])
+    components = {
+        "stock": _bounded_component(stock_return, float(settings["return_score_range"])),
+        "bond": _bounded_component(bond_return, float(settings["return_score_range"])),
+        "relative": _bounded_component(stock_return - bond_return, float(settings["relative_score_range"])),
+        "premium_change": _bounded_component(-premium_change, float(settings["premium_change_score_range"])),
+    }
+    raw_weights = dict(settings.get("component_weights") or {})
+    weights = {key: max(float(raw_weights.get(key, 0.0)), 0.0) for key in components}
+    total = sum(weights.values())
+    if total <= 0:
+        weights = dict(DEFAULT_DYNAMIC_CONFIG["component_weights"])
+        total = sum(weights.values())
+    score = sum(components[key] * weights[key] for key in components) / total
+    return {
+        "dynamic_score": round(max(0.0, min(100.0, score)), 2),
+        "dynamic_state": classified["linkage_state"],
+        "dynamic_note": _dynamic_note(str(classified["linkage_state"])),
+        "dynamic_data_quality": "OK",
+        "dynamic_components": {key: round(value, 2) for key, value in components.items()},
+    }
+
+
+def _bounded_component(signal: float, full_range: float) -> float:
+    if full_range <= 0:
+        return 50.0
+    return max(0.0, min(100.0, 50.0 + 50.0 * signal / full_range))
+
+
+def _dynamic_note(state: str) -> str:
+    return {
+        "关注补涨": "正股偏强、转债跟涨不足且溢价收缩，动态层偏积极。",
+        "谨慎追涨": "转债涨幅领先正股且溢价扩大，动态层提示谨慎追涨。",
+        "联动走弱": "正股与转债同步走弱，动态层提示短期回撤风险。",
+        "正常联动": "正股、转债与溢价率变化处于正常联动范围。",
+    }.get(state, "")
 
 
 def _finite_number(value: Any) -> float | None:
