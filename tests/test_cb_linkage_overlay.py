@@ -12,6 +12,8 @@ if str(BACKEND) not in sys.path:
 
 from superpower.tools.excel_reader import parse_convertible_bond_excel
 from superpower.skills.convertible_bond_ranking.linkage import classify_linkage
+from superpower.runtime.context import AgentContext
+from superpower.skills.convertible_bond_ranking.handler import Skill, rank_convertible_bonds
 
 
 DEFAULT_CONFIG = {
@@ -174,3 +176,64 @@ def test_linkage_classifier_rejects_inconsistent_premium_change_before_market_st
     assert result["linkage_state"] == "数据待核验"
     assert result["linkage_is_abnormal"] is True
     assert result["linkage_data_quality"] == "REVIEW"
+
+
+def _rankable_rows() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "date": "2026-07-06",
+                "bond_code": "A",
+                "bond_name": "A转债",
+                "price": 112,
+                "remaining_years": 2,
+                "conversion_premium_rate": 23,
+                "ytm": 0.01,
+                "stock_name": "正股A",
+                "bond_rating": "AAA",
+                "remaining_size": 8,
+                "unconverted_ratio": 0.8,
+                "sw_l1": "电子",
+            },
+            {
+                "date": "2026-07-06",
+                "bond_code": "B",
+                "bond_name": "B转债",
+                "price": 118,
+                "remaining_years": 3,
+                "conversion_premium_rate": 25,
+                "ytm": 0.005,
+                "stock_name": "正股B",
+                "bond_rating": "AA+",
+                "remaining_size": 6,
+                "unconverted_ratio": 0.7,
+                "sw_l1": "机械",
+            },
+        ]
+    )
+
+
+def test_linkage_overlay_does_not_change_ranking_or_top_selection(tmp_path: Path) -> None:
+    params = {"convertible_bond": {"top_n": 10, "linkage_overlay": DEFAULT_CONFIG}}
+    base = _rankable_rows()
+    with_linkage = base.copy()
+    with_linkage.loc[0, [
+        "stock_daily_return",
+        "bond_daily_return",
+        "previous_conversion_premium_rate",
+        "conversion_premium_change",
+    ]] = [3.0, 1.0, 25.0, -2.0]
+
+    base_ranked = rank_convertible_bonds(base, params)
+    overlay_ranked = rank_convertible_bonds(with_linkage, params)
+    protected = ["bond_code", "score", "rank", "qualification", "eligible_for_top", "action"]
+
+    pd.testing.assert_frame_equal(base_ranked[protected], overlay_ranked[protected])
+    assert overlay_ranked.loc[overlay_ranked["bond_code"] == "A", "linkage_state"].iloc[0] == "关注补涨"
+
+    base_context = AgentContext("base", tmp_path, {"cb_data": base, "strategy_params": params})
+    overlay_context = AgentContext("overlay", tmp_path, {"cb_data": with_linkage, "strategy_params": params})
+    Skill().run(base_context)
+    Skill().run(overlay_context)
+
+    assert list(base_context.get("cb_top10")["bond_code"]) == list(overlay_context.get("cb_top10")["bond_code"])

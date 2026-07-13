@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from superpower.runtime.context import AgentContext
+from superpower.skills.convertible_bond_ranking.linkage import classify_linkage
 
 
 OUTPUT_COLUMNS = [
@@ -19,6 +20,14 @@ OUTPUT_COLUMNS = [
     "remaining_years",
     "conversion_premium_rate",
     "premium_rate",
+    "stock_daily_return",
+    "bond_daily_return",
+    "previous_conversion_premium_rate",
+    "conversion_premium_change",
+    "linkage_state",
+    "linkage_note",
+    "linkage_is_abnormal",
+    "linkage_data_quality",
     "ytm",
     "stock_code",
     "stock_name",
@@ -316,6 +325,22 @@ def rank_convertible_bonds(
     eligible.loc[eligible["qualification"] == "weak_watch", "action"] = "弱观察候选，仅代表相对排序靠前，不构成高质量候选"
     eligible.loc[eligible["qualification"] == "risk_watch", "action"] = "风险观察，不进入Top候选"
 
+    linkage_config = config.get("linkage_overlay", {})
+    linkage_results = [
+        classify_linkage(row, linkage_config)
+        for _, row in eligible.iterrows()
+    ] if bool(linkage_config.get("enabled", True)) else [
+        {
+            "linkage_state": "未启用",
+            "linkage_note": "",
+            "linkage_is_abnormal": False,
+            "linkage_data_quality": "DISABLED",
+        }
+        for _ in range(len(eligible))
+    ]
+    for field in ("linkage_state", "linkage_note", "linkage_is_abnormal", "linkage_data_quality"):
+        eligible[field] = [result[field] for result in linkage_results]
+
     output = eligible[OUTPUT_COLUMNS].copy()
     output = output.sort_values(
         ["score", "credit_score", "redemption_score", "conversion_premium_rate"],
@@ -352,6 +377,10 @@ def _ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
         "price",
         "remaining_years",
         "conversion_premium_rate",
+        "stock_daily_return",
+        "bond_daily_return",
+        "previous_conversion_premium_rate",
+        "conversion_premium_change",
         "ytm",
         "stock_price",
         "conversion_price",
