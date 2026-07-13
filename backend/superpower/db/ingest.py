@@ -52,7 +52,14 @@ def ingest_dashboard(root_dir: Path, run_id: str, dashboard_path: Path) -> dict[
             _upsert_etf_bars(connection, _etf_bar_rows(dashboard))
             _upsert_etf_signals(connection, dashboard)
             _upsert_tl_signals(connection, dashboard.get("tlToday", []) + dashboard.get("tlRecent", []))
-            _upsert_convertibles(connection, normalized_report_date, dashboard.get("cbRanked", []) or dashboard.get("cbTop10", []))
+            ranked_convertibles = dashboard.get("cbRanked", []) or dashboard.get("cbTop10", [])
+            excluded_convertibles = dashboard.get("cbExcluded", [])
+            _upsert_convertibles(
+                connection,
+                normalized_report_date,
+                [dict(row, record_status="ranked") for row in ranked_convertibles]
+                + [dict(row, record_status="excluded") for row in excluded_convertibles],
+            )
             _upsert_data_quality(connection, run_id, dashboard.get("dataQuality", []))
             _upsert_source_manifest(connection, run_id, dashboard.get("sourceManifest", []))
             _upsert_agent_runs(connection, run_id, dashboard.get("agentAudit", []))
@@ -134,7 +141,7 @@ def _upsert_assets(connection: Any, dashboard: dict[str, Any], report_date: str)
     for row in dashboard.get("tlToday", []) + dashboard.get("tlRecent", []):
         if row.get("code"):
             rows.append((str(row["code"]), str(row.get("name", row["code"])), "TL"))
-    for row in dashboard.get("cbTop10", []) + dashboard.get("cbRanked", []):
+    for row in dashboard.get("cbTop10", []) + dashboard.get("cbRanked", []) + dashboard.get("cbExcluded", []):
         code = row.get("bond_code") or row.get("code")
         name = row.get("bond_name") or row.get("name") or code
         if code:
@@ -412,20 +419,30 @@ def _upsert_convertibles(connection: Any, report_date: str, rows: list[dict[str,
         connection.execute(
             """
             INSERT INTO convertible_bond_snapshots(
-              report_date, bond_code, bond_name, rank, price, remaining_years, conversion_premium_rate,
-              ytm, deducted_profit_growth, score, rank_reason, payload_json
+              report_date, source_date, bond_code, bond_name, record_status, rank, price,
+              remaining_years, conversion_premium_rate, ytm, deducted_profit_growth, score,
+              base_score, base_grade, strategy_id, strategy_version, overlay_id, overlay_version,
+              overlay_enabled, config_hash, auxiliary_score, auxiliary_state, rank_reason, payload_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(report_date, bond_code) DO UPDATE SET
-              bond_name=excluded.bond_name, rank=excluded.rank, price=excluded.price,
+              source_date=excluded.source_date, bond_name=excluded.bond_name,
+              record_status=excluded.record_status, rank=excluded.rank, price=excluded.price,
               remaining_years=excluded.remaining_years, conversion_premium_rate=excluded.conversion_premium_rate,
               ytm=excluded.ytm, deducted_profit_growth=excluded.deducted_profit_growth,
-              score=excluded.score, rank_reason=excluded.rank_reason, payload_json=excluded.payload_json
+              score=excluded.score, base_score=excluded.base_score, base_grade=excluded.base_grade,
+              strategy_id=excluded.strategy_id, strategy_version=excluded.strategy_version,
+              overlay_id=excluded.overlay_id, overlay_version=excluded.overlay_version,
+              overlay_enabled=excluded.overlay_enabled, config_hash=excluded.config_hash,
+              auxiliary_score=excluded.auxiliary_score, auxiliary_state=excluded.auxiliary_state,
+              rank_reason=excluded.rank_reason, payload_json=excluded.payload_json
             """,
             (
                 _fmt_date(report_date),
+                _fmt_date(row.get("source_date") or row.get("date")),
                 str(code),
                 row.get("bond_name") or row.get("name"),
+                row.get("record_status") or "ranked",
                 int(row.get("rank") or index),
                 _num(row.get("price")),
                 _num(row.get("remaining_years")),
@@ -433,6 +450,16 @@ def _upsert_convertibles(connection: Any, report_date: str, rows: list[dict[str,
                 _num(row.get("ytm")),
                 _num(row.get("deducted_profit_growth")),
                 _num(row.get("score")),
+                _num(row.get("base_score")),
+                row.get("base_grade") or row.get("score_grade"),
+                row.get("strategy_id"),
+                row.get("strategy_version"),
+                row.get("overlay_id"),
+                row.get("overlay_version"),
+                int(bool(row.get("overlay_enabled"))) if row.get("overlay_enabled") is not None else None,
+                row.get("config_hash"),
+                _num(row.get("auxiliary_score")),
+                row.get("auxiliary_state"),
                 row.get("rank_reason"),
                 _json(row),
             ),
