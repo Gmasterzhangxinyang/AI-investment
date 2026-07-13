@@ -21,12 +21,19 @@
     const params = clone(payload.params || {});
     const confirmedStrategyId = params.etf?.active_strategy || "legacy_v1";
     const selected = (payload.etfStrategies || []).find((item) => item.strategy_id === confirmedStrategyId);
+    const cbConfirmedStrategyId = params.convertible_bond?.active_strategy || "dynamic_v2";
+    const cbSelected = (payload.cbStrategies || []).find((item) => item.strategy_id === cbConfirmedStrategyId);
     return {
       params,
       strategies: clone(payload.etfStrategies || []),
       confirmedStrategyId,
       confirmedStrategyVersion: selected?.version || "",
       savedConfigHash: payload.etfConfigHash || "",
+      cb: {
+        strategies: clone(payload.cbStrategies || []),
+        confirmedStrategyId: cbConfirmedStrategyId,
+        confirmedStrategyVersion: cbSelected?.version || "",
+      },
     };
   }
 
@@ -48,6 +55,10 @@
 
   function showLegacyRiskOverlay(generated) {
     return generated?.strategy_id === "legacy_v1";
+  }
+
+  function showCbDynamicColumns(generated) {
+    return generated?.strategy_id === "dynamic_v2";
   }
 
   function tableColumnClass(key) {
@@ -131,5 +142,5 @@
       .sort((left, right) => left.horizon - right.horizon || left.strategy_id.localeCompare(right.strategy_id));
   }
 
-  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, tableColumnClass, strategyStateLabel, linkageStateLabel, historicalComparisonRows };
+  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, historicalComparisonRows };
 });

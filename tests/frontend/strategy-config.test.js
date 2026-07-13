@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, tableColumnClass, strategyStateLabel, linkageStateLabel, historicalComparisonRows } = require("../../frontend/assets/strategy-config.js");
+const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, historicalComparisonRows } = require("../../frontend/assets/strategy-config.js");
 
 test("deepMerge preserves dormant profiles and replaces arrays", () => {
   const current = { etf: { diagnostic_strategies: ["legacy_v1"], strategy_profiles: { future_v3: { kept: true } } } };
@@ -18,6 +18,28 @@ test("normalizeStrategyResponse keeps server-confirmed selection", () => {
   assert.equal(result.confirmedStrategyId, "legacy_v1");
   assert.equal(result.confirmedStrategyVersion, "1.0.0");
   assert.equal(result.savedConfigHash, "abc");
+});
+
+test("normalizeStrategyResponse keeps convertible strategy selection", () => {
+  const result = normalizeStrategyResponse({
+    params: { etf: { active_strategy: "legacy_v1" }, convertible_bond: { active_strategy: "dynamic_v2" } },
+    etfStrategies: [{ strategy_id: "legacy_v1", display_name: "原始策略", version: "1.0.0" }],
+    cbStrategies: [
+      { strategy_id: "legacy_v1", display_name: "原策略", version: "1.0.0" },
+      { strategy_id: "dynamic_v2", display_name: "动态策略", version: "2.0.0" },
+    ],
+    etfConfigHash: "abc",
+  });
+
+  assert.equal(result.cb.confirmedStrategyId, "dynamic_v2");
+  assert.equal(result.cb.confirmedStrategyVersion, "2.0.0");
+  assert.equal(result.cb.strategies.length, 2);
+});
+
+test("convertible dynamic columns follow generated result identity", () => {
+  assert.equal(showCbDynamicColumns({ strategy_id: "dynamic_v2", strategy_version: "2.0.0" }), true);
+  assert.equal(showCbDynamicColumns({ strategy_id: "legacy_v1", strategy_version: "1.0.0" }), false);
+  assert.equal(showCbDynamicColumns(null), false);
 });
 
 test("saved config newer than dashboard waits for refresh", () => {

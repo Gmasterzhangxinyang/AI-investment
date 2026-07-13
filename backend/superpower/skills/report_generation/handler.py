@@ -247,6 +247,13 @@ def _stable_dashboard_schema(
     quality_status = _overall_quality_status(quality)
     risk_notes = _top_risk_notes(quality, risk, safety_scan)
     run_warnings = _run_warnings(quality, risk, safety_scan)
+    cb_strategy_id = str(_first_value(cb_ranked, "strategy_id", "legacy_v1"))
+    cb_strategy = {
+        "strategy_id": cb_strategy_id,
+        "strategy_version": str(_first_value(cb_ranked, "strategy_version", "1.0.0")),
+        "display_name": "动态策略" if cb_strategy_id == "dynamic_v2" else "原策略",
+        "fallback_reason": str(_first_value(cb_ranked, "strategy_fallback_reason", "")),
+    }
     return {
         "run_info": {
             "run_id": context.run_id,
@@ -310,6 +317,7 @@ def _stable_dashboard_schema(
         },
         "convertible_bond": {
             "status": _module_status(cb_ranked, quality, "可转债"),
+            "strategy": cb_strategy,
             "counts": {
                 "top10": len(cb_top10),
                 "qualified": len(cb_qualified),

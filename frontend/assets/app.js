@@ -377,6 +377,7 @@ async function saveStrategyParams() {
   try {
     syncParamsFromForm();
     syncEtfStrategyFromForm();
+    syncCbStrategyFromForm();
     const response = await fetch("/api/strategy-params", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -567,6 +568,7 @@ function renderStrategyParams() {
   if (!params || !form) return;
   if (status) status.textContent = "参数已载入。修改后点击 Save Params。";
   renderEtfStrategySelector();
+  renderCbStrategySelector();
   const fields = [
     ["ETF", [
       ["etf.buy_volume_ratio_min", "建仓量能倍数", "number"],
@@ -671,6 +673,32 @@ function syncEtfStrategyFromForm() {
   state.strategyParams.etf.diagnostic_strategies = document.getElementById("etf-diagnostics-enabled")?.checked
     ? ["legacy_v1", "trend_pullback_v2"]
     : [selected];
+}
+
+function renderCbStrategySelector() {
+  const cbState = state.serverStrategyState?.cb;
+  const select = document.getElementById("cb-strategy-select");
+  if (!cbState || !select) return;
+  select.innerHTML = cbState.strategies
+    .map((item) => `<option value="${escapeHtml(item.strategy_id)}" ${item.strategy_id === cbState.confirmedStrategyId ? "selected" : ""}>${escapeHtml(item.display_name)} · v${escapeHtml(item.version)}</option>`)
+    .join("");
+  const generated = state.data?.convertible_bond?.strategy || null;
+  const generatedTarget = document.getElementById("cb-generated-strategy");
+  if (generatedTarget) generatedTarget.textContent = generated
+    ? `当前页面结果：${generated.display_name || generated.strategy_id} · v${generated.strategy_version}`
+    : "当前页面尚无可转债策略身份记录";
+  const refreshTarget = document.getElementById("cb-strategy-refresh-state");
+  if (refreshTarget) {
+    refreshTarget.textContent = generated?.strategy_id === cbState.confirmedStrategyId
+      ? "当前结果已按此策略生成"
+      : "已保存，待刷新后生效";
+  }
+}
+
+function syncCbStrategyFromForm() {
+  const selected = document.getElementById("cb-strategy-select")?.value;
+  if (!selected || !state.strategyParams?.convertible_bond) return;
+  state.strategyParams.convertible_bond.active_strategy = selected;
 }
 
 function renderModelConfig() {
@@ -1030,6 +1058,8 @@ function render() {
     ["daily_kdj_threshold_check", "日线KDJ"],
     ["weekly_macd_reason", "周线MACD"],
   ];
+  const cb = data.convertible_bond || {};
+  const showCbDynamic = ETFStrategyConfig.showCbDynamicColumns(cb.strategy);
   const cbColumns = [
     ["rank", "排名"],
     ["bond_name", "转债"],
@@ -1044,7 +1074,15 @@ function render() {
     ["ytm", "到期收益率"],
     ["deducted_profit_growth", "三年扣非增速"],
     ["profit_growth_acceleration", "25年加速"],
-    ["score", "评分"],
+    ...(showCbDynamic
+      ? [
+          ["base_score", "基础分"],
+          ["dynamic_score", "动态分"],
+          ["score", "综合分"],
+          ["dynamic_state", "动态状态"],
+          ["dynamic_note", "动态说明"],
+        ]
+      : [["score", "评分"]]),
     ["score_grade", "等级"],
     ["qualification", "资格"],
     ["not_top_reason", "未入Top原因"],
@@ -1053,7 +1091,6 @@ function render() {
     ["linkage_note", "联动提示"],
     ["rank_reason", "评分依据"],
   ];
-  const cb = data.convertible_bond || {};
   const cbSummary = cb.summary || {};
   const cbTopRows = cb.top10 || data.cbTop10 || [];
   const cbRankedRows = cb.candidates || cb.ranked_candidates || data.cbRanked || [];

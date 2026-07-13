@@ -53,7 +53,19 @@ def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
         tl_today=pd.DataFrame(),
         tl_recent=pd.DataFrame(),
         cb_top10=pd.DataFrame(),
-        cb_ranked=pd.DataFrame(),
+        cb_ranked=pd.DataFrame(
+            [
+                {
+                    "bond_code": "110001.SH",
+                    "strategy_id": "dynamic_v2",
+                    "strategy_version": "2.0.0",
+                    "strategy_fallback_reason": "",
+                    "base_score": 70.0,
+                    "dynamic_score": 80.0,
+                    "score": 72.0,
+                }
+            ]
+        ),
         cb_excluded=pd.DataFrame(),
         cb_qualified=pd.DataFrame(),
         cb_weak_watch=pd.DataFrame(),
@@ -77,6 +89,12 @@ def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
     assert "weak_watch" in payload["convertible_bond"]
     assert "risk_watch" in payload["convertible_bond"]
     assert "summary" in payload["convertible_bond"]
+    assert payload["convertible_bond"]["strategy"] == {
+        "strategy_id": "dynamic_v2",
+        "strategy_version": "2.0.0",
+        "display_name": "动态策略",
+        "fallback_reason": "",
+    }
     assert "key_points" in payload["report_summary"]
     assert payload["etf"]["strategy"]["strategy_id"] == "trend_pullback_v2"
     assert payload["etf"]["strategy"]["strategy_version"] == "2.0.0"
