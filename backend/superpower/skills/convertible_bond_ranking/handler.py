@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 
 from superpower.runtime.context import AgentContext
-from superpower.skills.convertible_bond_ranking.linkage import classify_linkage
+from superpower.skills.convertible_bond_ranking.linkage import classify_linkage, score_dynamic_linkage
+from superpower.skills.convertible_bond_ranking.strategy import cb_strategy_version, normalize_cb_config
 
 
 OUTPUT_COLUMNS = [
@@ -58,6 +59,15 @@ OUTPUT_COLUMNS = [
     "redemption_score",
     "scale_score",
     "risk_penalty",
+    "strategy_id",
+    "strategy_version",
+    "strategy_fallback_reason",
+    "base_score",
+    "dynamic_score",
+    "dynamic_state",
+    "dynamic_note",
+    "dynamic_data_quality",
+    "dynamic_components",
     "score",
     "risk_level",
     "risk_flags",
@@ -153,6 +163,7 @@ def rank_convertible_bonds(
     cannot add/remove candidates or change scores.
     """
     config = params.get("convertible_bond", {})
+    strategy_config = normalize_cb_config({"convertible_bond": config})
     price_limit = float(config.get("price_limit", 140))
     min_price = float(config.get("min_price", 100))
     high_ytm_hard_exclude = float(config.get("high_ytm_hard_exclude", 15))
@@ -289,6 +300,7 @@ def rank_convertible_bonds(
         - eligible["risk_penalty"]
     ).round(2)
     eligible["score"] = eligible["score"].clip(lower=0, upper=100)
+    eligible["base_score"] = eligible["score"]
     eligible["risk_flags"] = [
         risk_flags
         for _, risk_flags in eligible.apply(
@@ -341,11 +353,52 @@ def rank_convertible_bonds(
     for field in ("linkage_state", "linkage_note", "linkage_is_abnormal", "linkage_data_quality"):
         eligible[field] = [result[field] for result in linkage_results]
 
+    active_strategy = str(strategy_config["active_strategy"])
+    eligible["strategy_id"] = active_strategy
+    eligible["strategy_version"] = cb_strategy_version(active_strategy)
+    eligible["strategy_fallback_reason"] = ""
+    eligible["dynamic_score"] = np.nan
+    eligible["dynamic_state"] = ""
+    eligible["dynamic_note"] = ""
+    eligible["dynamic_data_quality"] = "DISABLED"
+    eligible["dynamic_components"] = [{} for _ in range(len(eligible))]
+    if active_strategy == "dynamic_v2":
+        try:
+            dynamic_results = [
+                score_dynamic_linkage(row, config.get("dynamic_scoring", {}))
+                for _, row in eligible.iterrows()
+            ]
+            for field in ("dynamic_score", "dynamic_state", "dynamic_note", "dynamic_data_quality", "dynamic_components"):
+                eligible[field] = [result[field] for result in dynamic_results]
+            profile = strategy_config["strategy_profiles"]["dynamic_v2"]
+            valid_dynamic = pd.to_numeric(eligible["dynamic_score"], errors="coerce").notna()
+            eligible.loc[valid_dynamic, "score"] = (
+                eligible.loc[valid_dynamic, "base_score"] * float(profile["base_weight"])
+                + pd.to_numeric(eligible.loc[valid_dynamic, "dynamic_score"], errors="coerce")
+                * float(profile["dynamic_weight"])
+            ).round(2)
+            eligible.loc[~valid_dynamic, "score"] = eligible.loc[~valid_dynamic, "base_score"]
+        except Exception as exc:
+            eligible["strategy_id"] = "legacy_v1"
+            eligible["strategy_version"] = cb_strategy_version("legacy_v1")
+            eligible["strategy_fallback_reason"] = f"dynamic_v2_failed: {type(exc).__name__}"
+            eligible["score"] = eligible["base_score"]
+            eligible["dynamic_data_quality"] = "FALLBACK"
+
     output = eligible[OUTPUT_COLUMNS].copy()
-    output = output.sort_values(
-        ["score", "credit_score", "redemption_score", "conversion_premium_rate"],
-        ascending=[False, False, False, True],
-    ).reset_index(drop=True)
+    if active_strategy == "dynamic_v2" and (output["strategy_id"] == "dynamic_v2").all():
+        output["_qualification_order"] = output["qualification"].map(
+            {"qualified": 0, "weak_watch": 1, "risk_watch": 2}
+        ).fillna(3)
+        output = output.sort_values(
+            ["_qualification_order", "score", "credit_score", "redemption_score", "conversion_premium_rate"],
+            ascending=[True, False, False, False, True],
+        ).drop(columns="_qualification_order").reset_index(drop=True)
+    else:
+        output = output.sort_values(
+            ["score", "credit_score", "redemption_score", "conversion_premium_rate"],
+            ascending=[False, False, False, True],
+        ).reset_index(drop=True)
     output["rank"] = np.arange(1, len(output) + 1)
     return (output, excluded) if include_excluded else output
 

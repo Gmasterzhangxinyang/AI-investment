@@ -223,7 +223,7 @@ def _rankable_rows() -> pd.DataFrame:
 
 
 def test_linkage_overlay_does_not_change_ranking_or_top_selection(tmp_path: Path) -> None:
-    params = {"convertible_bond": {"top_n": 10, "linkage_overlay": DEFAULT_CONFIG}}
+    params = {"convertible_bond": {"active_strategy": "legacy_v1", "top_n": 10, "linkage_overlay": DEFAULT_CONFIG}}
     base = _rankable_rows()
     with_linkage = base.copy()
     with_linkage.loc[0, [
@@ -246,6 +246,59 @@ def test_linkage_overlay_does_not_change_ranking_or_top_selection(tmp_path: Path
     Skill().run(overlay_context)
 
     assert list(base_context.get("cb_top10")["bond_code"]) == list(overlay_context.get("cb_top10")["bond_code"])
+
+
+def test_dynamic_v2_blends_scores_without_changing_qualification_or_action() -> None:
+    template = _rankable_rows().iloc[0].to_dict()
+    base = pd.DataFrame(
+        [
+            {**template, "bond_code": "B", "bond_name": "B转债", "stock_name": "正股B", "sw_l1": "机械"},
+            {**template, "bond_code": "A", "bond_name": "A转债", "stock_name": "正股A", "sw_l1": "电子"},
+        ]
+    )
+    with_linkage = base.copy()
+    with_linkage.loc[with_linkage["bond_code"] == "A", [
+        "stock_daily_return",
+        "bond_daily_return",
+        "previous_conversion_premium_rate",
+        "conversion_premium_change",
+    ]] = [3.0, 1.0, 25.0, -2.0]
+    legacy = rank_convertible_bonds(
+        with_linkage,
+        {"convertible_bond": {"active_strategy": "legacy_v1", "top_n": 10}},
+    )
+    dynamic = rank_convertible_bonds(
+        with_linkage,
+        {
+            "convertible_bond": {
+                "active_strategy": "dynamic_v2",
+                "top_n": 10,
+                "strategy_profiles": {"dynamic_v2": {"base_weight": 0.8, "dynamic_weight": 0.2}},
+                "dynamic_scoring": DEFAULT_CONFIG,
+            }
+        },
+    )
+
+    legacy_by_code = legacy.set_index("bond_code")
+    dynamic_by_code = dynamic.set_index("bond_code")
+    row = dynamic_by_code.loc["A"]
+    assert row["strategy_id"] == "dynamic_v2"
+    assert row["base_score"] == legacy_by_code.loc["A", "score"]
+    assert row["dynamic_score"] > 50
+    assert row["score"] == round(row["base_score"] * 0.8 + row["dynamic_score"] * 0.2, 2)
+    assert dynamic_by_code["qualification"].to_dict() == legacy_by_code["qualification"].to_dict()
+    assert dynamic_by_code["action"].to_dict() == legacy_by_code["action"].to_dict()
+
+
+def test_dynamic_v2_falls_back_to_base_score_per_row_when_data_is_missing() -> None:
+    ranked = rank_convertible_bonds(
+        _rankable_rows(),
+        {"convertible_bond": {"active_strategy": "dynamic_v2", "top_n": 10}},
+    )
+
+    assert ranked["dynamic_score"].isna().all()
+    assert (ranked["score"] == ranked["base_score"]).all()
+    assert (ranked["dynamic_data_quality"] == "MISSING").all()
 
 
 def test_dynamic_scorer_rewards_valid_catch_up() -> None:
