@@ -452,11 +452,14 @@
                 <div id="etf-strategy-params"></div>
               </div>
               <div class="strategy-selector-panel">
-                <label for="cb-strategy-select">可转债当前策略</label>
-                <select id="cb-strategy-select"></select>
+                <strong>可转债基础策略：原策略</strong>
+                <label class="strategy-check">
+                  <input id="cb-auxiliary-enabled" type="checkbox" />
+                  启用四项短期动态辅助
+                </label>
                 <div id="cb-generated-strategy" class="plain-text"></div>
                 <div id="cb-strategy-refresh-state" class="plain-text" role="status"></div>
-                <p class="plain-text">动态策略使用基础分 80% + 短期动态分 20%；原策略可随时切换回退。</p>
+                <p class="plain-text">基础策略负责评分、资格和排名；动态辅助只提示补涨、追涨或联动走弱，不改变排名。</p>
               </div>
               <form id="params-form" class="params-form"></form>
             </article>

@@ -2986,6 +2986,12 @@ body:not([data-view="chat"]) td {
   min-width: 900px;
 }
 
+#cb-table,
+#cb-top-table,
+#cb-ranked-table {
+  min-width: 1320px;
+}
+
 .history-highlight-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -1,6 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, historicalComparisonRows } = require("../../frontend/assets/strategy-config.js");
+const fs = require("node:fs");
+const path = require("node:path");
+const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, auxiliaryStateLabel, historicalComparisonRows } = require("../../frontend/assets/strategy-config.js");
 
 test("deepMerge preserves dormant profiles and replaces arrays", () => {
   const current = { etf: { diagnostic_strategies: ["legacy_v1"], strategy_profiles: { future_v3: { kept: true } } } };
@@ -22,18 +24,32 @@ test("normalizeStrategyResponse keeps server-confirmed selection", () => {
 
 test("normalizeStrategyResponse keeps convertible strategy selection", () => {
   const result = normalizeStrategyResponse({
-    params: { etf: { active_strategy: "legacy_v1" }, convertible_bond: { active_strategy: "dynamic_v2" } },
+    params: {
+      etf: { active_strategy: "legacy_v1" },
+      convertible_bond: {
+        base_strategy: "legacy_v1",
+        auxiliary_overlay: { enabled: true, overlay_id: "dynamic_v2", settings: {} },
+      },
+    },
     etfStrategies: [{ strategy_id: "legacy_v1", display_name: "原始策略", version: "1.0.0" }],
-    cbStrategies: [
-      { strategy_id: "legacy_v1", display_name: "原策略", version: "1.0.0" },
-      { strategy_id: "dynamic_v2", display_name: "动态策略", version: "2.0.0" },
-    ],
+    cbBaseStrategies: [{ strategy_id: "legacy_v1", display_name: "原策略", version: "1.0.0" }],
+    cbAuxiliaryOverlays: [{ overlay_id: "dynamic_v2", display_name: "动态辅助", version: "2.0.0" }],
+    cbConfigHash: "cb-hash",
     etfConfigHash: "abc",
   });
 
-  assert.equal(result.cb.confirmedStrategyId, "dynamic_v2");
-  assert.equal(result.cb.confirmedStrategyVersion, "2.0.0");
-  assert.equal(result.cb.strategies.length, 2);
+  assert.equal(result.cb.confirmedStrategyId, "legacy_v1");
+  assert.equal(result.cb.confirmedStrategyVersion, "1.0.0");
+  assert.equal(result.cb.overlayId, "dynamic_v2");
+  assert.equal(result.cb.overlayEnabled, true);
+  assert.equal(result.cb.savedConfigHash, "cb-hash");
+});
+
+test("convertible result waits for refresh when config hash differs", () => {
+  assert.equal(generatedResultState(
+    { savedConfigHash: "new", confirmedStrategyId: "legacy_v1", confirmedStrategyVersion: "1.0.0" },
+    { config_hash: "old", strategy_id: "legacy_v1", strategy_version: "1.0.0" },
+  ).status, "saved_waiting_refresh");
 });
 
 test("convertible dynamic columns follow generated result identity", () => {
@@ -89,6 +105,20 @@ test("convertible linkage state hides normal noise and keeps warnings", () => {
   assert.equal(linkageStateLabel("数据不足"), "--");
   assert.equal(linkageStateLabel("关注补涨"), "关注补涨");
   assert.equal(linkageStateLabel("谨慎追涨"), "谨慎追涨");
+});
+
+test("convertible auxiliary state hides normal noise but shows missing data", () => {
+  assert.equal(auxiliaryStateLabel("正常联动"), "--");
+  assert.equal(auxiliaryStateLabel("数据不足"), "数据不足");
+  assert.equal(auxiliaryStateLabel("关注补涨"), "关注补涨");
+  assert.equal(auxiliaryStateLabel("谨慎追涨"), "谨慎追涨");
+  assert.equal(auxiliaryStateLabel("联动走弱"), "联动走弱");
+});
+
+test("convertible table source contains no combined-score or dynamic-state labels", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../../frontend/assets/app.js"), "utf8");
+  assert.equal(source.includes('["score", "综合分"]'), false);
+  assert.equal(source.includes('["dynamic_state", "动态状态"]'), false);
 });
 
 test("strategy state codes render as concise Chinese labels", () => {

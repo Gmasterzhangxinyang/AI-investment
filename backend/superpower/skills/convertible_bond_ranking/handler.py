@@ -8,7 +8,7 @@ import pandas as pd
 from superpower.runtime.context import AgentContext
 from superpower.skills.convertible_bond_ranking.linkage import classify_linkage
 from superpower.skills.convertible_bond_ranking.registry import default_cb_registry
-from superpower.skills.convertible_bond_ranking.strategy import normalize_cb_config
+from superpower.skills.convertible_bond_ranking.strategy import cb_config_hash, normalize_cb_config
 
 
 OUTPUT_COLUMNS = [
@@ -63,6 +63,8 @@ OUTPUT_COLUMNS = [
     "strategy_id",
     "strategy_version",
     "strategy_fallback_reason",
+    "config_hash",
+    "source_date",
     "overlay_id",
     "overlay_version",
     "overlay_enabled",
@@ -372,6 +374,8 @@ def rank_convertible_bonds(
     eligible["strategy_id"] = base_strategy.strategy_id
     eligible["strategy_version"] = base_strategy.version
     eligible["strategy_fallback_reason"] = ""
+    eligible["config_hash"] = cb_config_hash(strategy_config)
+    eligible["source_date"] = eligible["date"]
     eligible["overlay_id"] = str(overlay_config["overlay_id"])
     eligible["overlay_version"] = ""
     eligible["overlay_enabled"] = overlay_enabled

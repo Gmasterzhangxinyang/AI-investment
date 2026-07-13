@@ -21,8 +21,10 @@
     const params = clone(payload.params || {});
     const confirmedStrategyId = params.etf?.active_strategy || "legacy_v1";
     const selected = (payload.etfStrategies || []).find((item) => item.strategy_id === confirmedStrategyId);
-    const cbConfirmedStrategyId = params.convertible_bond?.active_strategy || "dynamic_v2";
-    const cbSelected = (payload.cbStrategies || []).find((item) => item.strategy_id === cbConfirmedStrategyId);
+    const cbConfirmedStrategyId = params.convertible_bond?.base_strategy || "legacy_v1";
+    const cbBaseStrategies = payload.cbBaseStrategies || (payload.cbStrategies || []).filter((item) => item.strategy_id === "legacy_v1");
+    const cbSelected = cbBaseStrategies.find((item) => item.strategy_id === cbConfirmedStrategyId);
+    const cbOverlay = params.convertible_bond?.auxiliary_overlay || { enabled: false, overlay_id: "dynamic_v2" };
     return {
       params,
       strategies: clone(payload.etfStrategies || []),
@@ -30,9 +32,13 @@
       confirmedStrategyVersion: selected?.version || "",
       savedConfigHash: payload.etfConfigHash || "",
       cb: {
-        strategies: clone(payload.cbStrategies || []),
+        strategies: clone(cbBaseStrategies),
+        overlays: clone(payload.cbAuxiliaryOverlays || []),
         confirmedStrategyId: cbConfirmedStrategyId,
         confirmedStrategyVersion: cbSelected?.version || "",
+        overlayId: cbOverlay.overlay_id || "dynamic_v2",
+        overlayEnabled: Boolean(cbOverlay.enabled),
+        savedConfigHash: payload.cbConfigHash || "",
       },
     };
   }
@@ -73,6 +79,10 @@
 
   function linkageStateLabel(value) {
     return ["正常联动", "数据不足", "未启用", "", null, undefined].includes(value) ? "--" : value;
+  }
+
+  function auxiliaryStateLabel(value) {
+    return ["正常联动", "未启用", "", null, undefined].includes(value) ? "--" : value;
   }
 
   function strategyStateLabel(key, value) {
@@ -146,5 +156,5 @@
       .sort((left, right) => left.horizon - right.horizon || left.strategy_id.localeCompare(right.strategy_id));
   }
 
-  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, historicalComparisonRows };
+  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, auxiliaryStateLabel, historicalComparisonRows };
 });

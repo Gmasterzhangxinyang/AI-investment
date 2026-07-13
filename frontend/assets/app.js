@@ -79,6 +79,7 @@ const formatValue = (key, value) => {
   if (key.includes("return") && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
   if (key === "medium_status" || key === "short_entry_status") return ETFStrategyConfig.strategyStateLabel(key, value);
   if (key === "linkage_state") return ETFStrategyConfig.linkageStateLabel(value);
+  if (key === "auxiliary_state") return ETFStrategyConfig.auxiliaryStateLabel(value);
   return formatNumber(value);
 };
 
@@ -448,8 +449,8 @@ function renderAssetDetail() {
       ["是否可进合格 Top", cbRow.eligible_for_top_text],
       ["未入 Top 原因", cbRow.not_top_reason || cbRow.excluded_reason || detail.convertibleMessage],
       ["排名", cbRow.rank],
-      ["评分", cbRow.score],
-      ["评分等级", cbRow.score_grade],
+      ["基础分", cbRow.base_score ?? cbRow.score],
+      ["基础等级", cbRow.base_grade ?? cbRow.score_grade],
       ["价格", cbRow.price],
       ["评级", cbRow.bond_rating || cbRow.rating],
       ["行业", cbRow.sw_l1],
@@ -462,8 +463,8 @@ function renderAssetDetail() {
       ["正股当日涨幅", cbRow.stock_daily_return],
       ["转债当日涨幅", cbRow.bond_daily_return],
       ["溢价率当日变化", cbRow.conversion_premium_change],
-      ["短期联动", ETFStrategyConfig.linkageStateLabel(cbRow.linkage_state)],
-      ["联动提示", cbRow.linkage_note || "暂无异常提示；不改变原排名"],
+      ["动态辅助", ETFStrategyConfig.auxiliaryStateLabel(cbRow.auxiliary_state ?? cbRow.dynamic_state)],
+      ["辅助说明", cbRow.auxiliary_note || cbRow.dynamic_note || "暂无异常提示；不改变基础排名"],
       ["评分依据", cbRow.rank_reason],
       ["数据来源", snapshot.bond_code ? "数据库快照" : "当前 dashboard"],
     ];
@@ -677,28 +678,28 @@ function syncEtfStrategyFromForm() {
 
 function renderCbStrategySelector() {
   const cbState = state.serverStrategyState?.cb;
-  const select = document.getElementById("cb-strategy-select");
-  if (!cbState || !select) return;
-  select.innerHTML = cbState.strategies
-    .map((item) => `<option value="${escapeHtml(item.strategy_id)}" ${item.strategy_id === cbState.confirmedStrategyId ? "selected" : ""}>${escapeHtml(item.display_name)} · v${escapeHtml(item.version)}</option>`)
-    .join("");
+  const enabled = document.getElementById("cb-auxiliary-enabled");
+  if (!cbState || !enabled) return;
+  enabled.checked = cbState.overlayEnabled;
   const generated = state.data?.convertible_bond?.strategy || null;
   const generatedTarget = document.getElementById("cb-generated-strategy");
   if (generatedTarget) generatedTarget.textContent = generated
-    ? `当前页面结果：${generated.display_name || generated.strategy_id} · v${generated.strategy_version}`
+    ? `当前页面结果：${generated.display_name || "原策略"} · v${generated.strategy_version}${generated.overlay_enabled ? " + 动态辅助" : ""}`
     : "当前页面尚无可转债策略身份记录";
   const refreshTarget = document.getElementById("cb-strategy-refresh-state");
-  if (refreshTarget) {
-    refreshTarget.textContent = generated?.strategy_id === cbState.confirmedStrategyId
-      ? "当前结果已按此策略生成"
-      : "已保存，待刷新后生效";
-  }
+  if (refreshTarget) refreshTarget.textContent = ETFStrategyConfig.generatedResultState(cbState, generated).label;
 }
 
 function syncCbStrategyFromForm() {
-  const selected = document.getElementById("cb-strategy-select")?.value;
-  if (!selected || !state.strategyParams?.convertible_bond) return;
-  state.strategyParams.convertible_bond.active_strategy = selected;
+  if (!state.strategyParams?.convertible_bond) return;
+  const enabled = Boolean(document.getElementById("cb-auxiliary-enabled")?.checked);
+  state.strategyParams.convertible_bond.base_strategy = "legacy_v1";
+  state.strategyParams.convertible_bond.auxiliary_overlay = {
+    ...(state.strategyParams.convertible_bond.auxiliary_overlay || {}),
+    enabled,
+    overlay_id: "dynamic_v2",
+    settings: state.strategyParams.convertible_bond.auxiliary_overlay?.settings || {},
+  };
 }
 
 function renderModelConfig() {
@@ -1059,8 +1060,6 @@ function render() {
     ["weekly_macd_reason", "周线MACD"],
   ];
   const cb = data.convertible_bond || {};
-  const showCbDynamic = ETFStrategyConfig.showCbDynamicColumns(cb.strategy);
-  const showCbLegacyLinkage = ETFStrategyConfig.showCbLegacyLinkageColumns(cb.strategy);
   const cbColumns = [
     ["rank", "排名"],
     ["bond_name", "转债"],
@@ -1075,25 +1074,12 @@ function render() {
     ["ytm", "到期收益率"],
     ["deducted_profit_growth", "三年扣非增速"],
     ["profit_growth_acceleration", "25年加速"],
-    ...(showCbDynamic
-      ? [
-          ["base_score", "基础分"],
-          ["dynamic_score", "动态分"],
-          ["score", "综合分"],
-          ["dynamic_state", "动态状态"],
-          ["dynamic_note", "动态说明"],
-        ]
-      : [["score", "评分"]]),
-    ["score_grade", "等级"],
+    ["base_score", "基础分"],
+    ["base_grade", "基础等级"],
     ["qualification", "资格"],
     ["not_top_reason", "未入Top原因"],
     ["risk_flags", "风险提示"],
-    ...(showCbLegacyLinkage
-      ? [
-          ["linkage_state", "短期联动"],
-          ["linkage_note", "联动提示"],
-        ]
-      : []),
+    ["auxiliary_state", "动态辅助"],
     ["rank_reason", "评分依据"],
   ];
   const cbSummary = cb.summary || {};
@@ -2157,17 +2143,14 @@ function localConvertibleAnswer(question) {
   const name = row.bond_name || row.name || "--";
   const code = row.bond_code || row.code || "--";
   const reason = row.not_top_reason || row.excluded_reason || row.rank_reason || "--";
-  const dynamicStrategy = row.strategy_id === "dynamic_v2";
-  const strategyLine = dynamicStrategy
-    ? `当前策略：动态策略 v2；基础分 ${formatNumber(row.base_score)}，动态分 ${formatNumber(row.dynamic_score)}，综合分 ${formatNumber(row.score)}；动态状态：${row.dynamic_state || "--"}。${row.dynamic_note || ""}动态层不会改变资格和硬风控，只可调整同一资格池内顺序。`
-    : `当前策略：原策略 v1；评分 ${formatNumber(row.score)}。短期联动只作提示，不进入原策略排名。`;
+  const strategyLine = `当前基础策略：原策略 v1；基础分 ${formatNumber(row.base_score ?? row.score)}。动态辅助：${ETFStrategyConfig.auxiliaryStateLabel(row.auxiliary_state ?? row.dynamic_state)}。${row.auxiliary_note || row.dynamic_note || ""}动态辅助不改变资格、动作和排名。`;
   return [
     `结论：${name}（${code}）截至 ${state.data?.reportDate || "--"} 不进入合格 Top 候选。当前分层：${qualificationLabel(row.qualification || hit.bucket)}；是否可进合格 Top：${row.eligible_for_top === true ? "是" : "否"}。`,
     `核心原因：${reason}`,
-    `当前字段：价格 ${formatNumber(row.price)}，转股溢价率 ${formatNumber(row.conversion_premium_rate)}，YTM ${formatNumber(row.ytm)}，评级 ${row.bond_rating || row.rating || "--"}，存续规模 ${formatNumber(row.remaining_size)}，强赎状态 ${row.redemption_status || "--"}，评分 ${formatNumber(row.score)}，评分等级 ${row.score_grade || "--"}，风险等级 ${row.risk_level || "--"}。`,
+    `当前字段：价格 ${formatNumber(row.price)}，转股溢价率 ${formatNumber(row.conversion_premium_rate)}，YTM ${formatNumber(row.ytm)}，评级 ${row.bond_rating || row.rating || "--"}，存续规模 ${formatNumber(row.remaining_size)}，强赎状态 ${row.redemption_status || "--"}，基础分 ${formatNumber(row.base_score ?? row.score)}，基础等级 ${row.base_grade || row.score_grade || "--"}，风险等级 ${row.risk_level || "--"}。`,
     `风险备注：${formatNumber(row.quality_notes || row.risk_flags || "--")}`,
     strategyLine,
-    `短期联动原始值：正股 ${formatNumber(row.stock_daily_return)}%，转债 ${formatNumber(row.bond_daily_return)}%，溢价率变化 ${formatNumber(row.conversion_premium_change)} 个百分点。`,
+    `动态辅助原始值：正股 ${formatNumber(row.stock_daily_return)}%，转债 ${formatNumber(row.bond_daily_return)}%，溢价率变化 ${formatNumber(row.conversion_premium_change)} 个百分点。`,
     "规则口径：可转债先做价格、评级、强赎、YTM、溢价率、规模和基本面等风控，再做候选资格分层；弱观察和风险观察不补进合格 Top。",
     "来源：本地 dashboard.convertible_bond、cbExcluded、策略参数。",
   ].join("\n\n");

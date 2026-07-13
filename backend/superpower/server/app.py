@@ -22,7 +22,8 @@ from superpower.chat import ChatOrchestrator
 from superpower.chat.schemas import ChatRequest
 from superpower.db import DatabaseRepository
 from superpower.skills.ai_research_committee.handler import COMMITTEE_LLM_TIMEOUT_SECONDS, COMMITTEE_ROLES
-from superpower.skills.convertible_bond_ranking.strategy import cb_strategy_metadata, normalize_cb_config
+from superpower.skills.convertible_bond_ranking.registry import default_cb_registry
+from superpower.skills.convertible_bond_ranking.strategy import cb_config_hash, cb_strategy_metadata, normalize_cb_config
 from superpower.skills.etf_rotation_strategy.config import (
     etf_config_hash,
     merge_strategy_params,
@@ -758,6 +759,7 @@ def _validate_strategy_params(params: dict[str, Any]) -> None:
 
 def _strategy_params_payload(params: dict[str, Any]) -> dict[str, Any]:
     normalized = normalize_etf_config(params)
+    normalized_cb = normalize_cb_config(params)
     strategies = [
         {
             "strategy_id": item.strategy_id,
@@ -777,12 +779,34 @@ def _strategy_params_payload(params: dict[str, Any]) -> dict[str, Any]:
         }
         for item in cb_strategy_metadata()
     ]
+    cb_registry = default_cb_registry()
+    cb_base_strategies = [
+        {
+            "strategy_id": item.strategy_id,
+            "display_name": item.display_name,
+            "version": item.version,
+        }
+        for item in cb_registry.base_metadata()
+    ]
+    cb_auxiliary_overlays = [
+        {
+            "overlay_id": item.overlay_id,
+            "display_name": item.display_name,
+            "version": item.version,
+        }
+        for item in cb_registry.overlay_metadata()
+    ]
+    public_params = json.loads(json.dumps(params, ensure_ascii=False))
+    public_params["convertible_bond"] = normalized_cb
     return {
         "status": "success",
-        "params": params,
+        "params": public_params,
         "etfStrategies": strategies,
         "cbStrategies": cb_strategies,
+        "cbBaseStrategies": cb_base_strategies,
+        "cbAuxiliaryOverlays": cb_auxiliary_overlays,
         "etfConfigHash": etf_config_hash(normalized),
+        "cbConfigHash": cb_config_hash(normalized_cb),
     }
 
 

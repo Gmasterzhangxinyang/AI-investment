@@ -57,12 +57,18 @@ def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
             [
                 {
                     "bond_code": "110001.SH",
-                    "strategy_id": "dynamic_v2",
-                    "strategy_version": "2.0.0",
+                    "date": "2026-07-06",
+                    "strategy_id": "legacy_v1",
+                    "strategy_version": "1.0.0",
                     "strategy_fallback_reason": "",
+                    "overlay_id": "dynamic_v2",
+                    "overlay_version": "2.0.0",
+                    "overlay_enabled": True,
+                    "overlay_fallback_reason": "",
+                    "config_hash": "b" * 64,
                     "base_score": 70.0,
-                    "dynamic_score": 80.0,
-                    "score": 72.0,
+                    "auxiliary_score": 80.0,
+                    "score": 70.0,
                 }
             ]
         ),
@@ -90,10 +96,17 @@ def test_stable_dashboard_schema_has_required_top_level_keys() -> None:
     assert "risk_watch" in payload["convertible_bond"]
     assert "summary" in payload["convertible_bond"]
     assert payload["convertible_bond"]["strategy"] == {
-        "strategy_id": "dynamic_v2",
-        "strategy_version": "2.0.0",
-        "display_name": "动态策略",
+        "strategy_id": "legacy_v1",
+        "strategy_version": "1.0.0",
+        "display_name": "原策略",
         "fallback_reason": "",
+        "overlay_id": "dynamic_v2",
+        "overlay_version": "2.0.0",
+        "overlay_enabled": True,
+        "overlay_display_name": "动态辅助",
+        "overlay_fallback_reason": "",
+        "config_hash": "b" * 64,
+        "source_date": "2026-07-06",
     }
     assert "key_points" in payload["report_summary"]
     assert payload["etf"]["strategy"]["strategy_id"] == "trend_pullback_v2"

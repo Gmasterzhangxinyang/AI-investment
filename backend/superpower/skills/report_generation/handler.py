@@ -248,11 +248,24 @@ def _stable_dashboard_schema(
     risk_notes = _top_risk_notes(quality, risk, safety_scan)
     run_warnings = _run_warnings(quality, risk, safety_scan)
     cb_strategy_id = str(_first_value(cb_ranked, "strategy_id", "legacy_v1"))
+    cb_overlay_id = str(_first_value(cb_ranked, "overlay_id", ""))
+    cb_source_value = _first_value(cb_ranked, "source_date", _first_value(cb_ranked, "date", ""))
+    cb_source_date = ""
+    if cb_source_value not in {None, ""}:
+        parsed_source_date = pd.to_datetime(cb_source_value, errors="coerce")
+        cb_source_date = parsed_source_date.strftime("%Y-%m-%d") if pd.notna(parsed_source_date) else str(cb_source_value)
     cb_strategy = {
         "strategy_id": cb_strategy_id,
         "strategy_version": str(_first_value(cb_ranked, "strategy_version", "1.0.0")),
-        "display_name": "动态策略" if cb_strategy_id == "dynamic_v2" else "原策略",
+        "display_name": "原策略" if cb_strategy_id == "legacy_v1" else cb_strategy_id,
         "fallback_reason": str(_first_value(cb_ranked, "strategy_fallback_reason", "")),
+        "overlay_id": cb_overlay_id,
+        "overlay_version": str(_first_value(cb_ranked, "overlay_version", "")),
+        "overlay_enabled": bool(_first_value(cb_ranked, "overlay_enabled", False)),
+        "overlay_display_name": "动态辅助" if cb_overlay_id == "dynamic_v2" else cb_overlay_id,
+        "overlay_fallback_reason": str(_first_value(cb_ranked, "overlay_fallback_reason", "")),
+        "config_hash": str(_first_value(cb_ranked, "config_hash", "")),
+        "source_date": cb_source_date,
     }
     return {
         "run_info": {
