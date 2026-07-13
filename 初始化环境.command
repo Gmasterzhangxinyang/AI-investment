@@ -43,7 +43,17 @@ if ! "$PYTHON" -m pip install --upgrade pip setuptools wheel; then
   exit 1
 fi
 
-if ! "$PYTHON" -m pip install --no-build-isolation -e "$ROOT_DIR"; then
+if ! "$PYTHON" -m pip install -r "$ROOT_DIR/requirements.lock"; then
+  echo ""
+  echo "固定版本依赖安装失败。请把上面的错误信息发给开发者。"
+  echo "按任意键退出。"
+  if [[ -t 0 ]]; then
+    read -k 1
+  fi
+  exit 1
+fi
+
+if ! "$PYTHON" -m pip install --no-build-isolation --no-deps -e "$ROOT_DIR"; then
   echo ""
   echo "依赖安装失败。请把上面的错误信息发给开发者。"
   echo "按任意键退出。"

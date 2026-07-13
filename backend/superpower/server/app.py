@@ -844,13 +844,9 @@ def _merge_model_config_secrets(existing: dict[str, Any], incoming: dict[str, An
     merged = dict(incoming)
     merged.pop("api_key_configured", None)
     merged.pop("api_key_masked", None)
-    incoming_key = str(incoming.get("api_key") or "").strip()
-    if incoming_key:
-        merged["api_key"] = incoming_key
-    elif existing.get("api_key"):
-        merged["api_key"] = existing["api_key"]
-    else:
-        merged.pop("api_key", None)
+    # API keys are runtime secrets. Older config files remain readable, but the
+    # next save deliberately removes any plaintext value from disk.
+    merged.pop("api_key", None)
     return merged
 
 

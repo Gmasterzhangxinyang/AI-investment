@@ -15,7 +15,6 @@ const state = {
   openaiModels: [],
   openaiModelSource: "",
   openaiModelMessage: "",
-  isEditingOpenAiKey: false,
   openaiConnection: null,
   dbStatus: null,
   isChatting: false,
@@ -244,7 +243,6 @@ async function saveModelConfig() {
     const result = await readJsonResponse(response);
     if (!response.ok || result.status !== "success") throw new Error(result.message || `HTTP ${response.status}`);
     state.modelConfig = result.config;
-    state.isEditingOpenAiKey = false;
     if (status) status.textContent = "AI 模型配置已保存。下一次 AI 智能问答生效。";
     renderModelConfig();
     if (state.data) render();
@@ -257,13 +255,12 @@ async function saveModelConfig() {
 async function verifyOpenAiConnection() {
   if (!state.modelConfig) return;
   const status = document.getElementById("model-config-status");
-  const apiKey = (document.getElementById("openai-api-key")?.value || "").trim();
   if (status) status.textContent = "正在验证 OpenAI 连通性。";
   try {
     const response = await fetch("/api/model-config/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apiKey }),
+      body: JSON.stringify({}),
     });
     const result = await readJsonResponse(response);
     if (!response.ok || result.status !== "success") throw new Error(result.message || `HTTP ${response.status}`);
@@ -731,7 +728,6 @@ function renderModelConfig() {
       : config.api_key_configured
         ? "已配置"
         : "未配置";
-  const keyDisabled = state.isEditingOpenAiKey ? "" : "disabled";
   form.innerHTML = `
     <div class="model-config-grid">
       <div class="param-field">
@@ -750,11 +746,9 @@ function renderModelConfig() {
       <div class="param-field span-2">
         <label>OpenAI Key <span class="key-health ${keyStatusClass}">${escapeHtml(keyStatusText)}</span></label>
         <div class="key-control-row">
-          <input id="openai-api-key" type="password" autocomplete="off" value="" placeholder="${escapeHtml(config.api_key_masked || "sk-...")}" ${keyDisabled} />
-          <button id="edit-openai-key" class="button" type="button">${state.isEditingOpenAiKey ? "取消修改" : "修改 Key"}</button>
           <button id="verify-openai-key" class="button" type="button">验证连通</button>
         </div>
-        <small>${state.isEditingOpenAiKey ? "请输入新的 OpenAI key；保存后会替换当前 key。" : "默认使用当前已配置 key。需要更换时点击“修改 Key”。"}</small>
+        <small>Key 仅从环境变量 ${escapeHtml(config.api_key_env || "OPENAI_API_KEY")} 读取，不在页面或配置文件中保存。</small>
       </div>
       <p id="model-list-status" class="plain-text span-2">${escapeHtml(state.openaiModelMessage || "模型列表会按当前 key 自动读取。")}</p>
     </div>
@@ -766,13 +760,12 @@ function syncModelConfigFromForm() {
   const selectedModel = document.getElementById("chat-model-select")?.value || "";
   const customModel = (document.getElementById("chat-model-custom")?.value || "").trim();
   const model = selectedModel === "__custom__" ? customModel : selectedModel;
-  const apiKey = (document.getElementById("openai-api-key")?.value || "").trim();
   config.provider = config.provider || "openai";
   config.primary_model = config.primary_model || model || "gpt-5.5";
   config.api_key_env = config.api_key_env || "OPENAI_API_KEY";
   delete config.api_key_configured;
   delete config.api_key_masked;
-  if (apiKey) config.api_key = apiKey;
+  delete config.api_key;
   config.chat = {
     ...(config.chat || {}),
     provider: "openai",
@@ -2287,12 +2280,6 @@ document.getElementById("refresh-openai-models")?.addEventListener("click", load
 document.getElementById("model-config-form")?.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
-  if (target.id === "edit-openai-key") {
-    event.preventDefault();
-    state.isEditingOpenAiKey = !state.isEditingOpenAiKey;
-    renderModelConfig();
-    if (state.isEditingOpenAiKey) document.getElementById("openai-api-key")?.focus();
-  }
   if (target.id === "verify-openai-key") {
     event.preventDefault();
     verifyOpenAiConnection();

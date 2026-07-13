@@ -121,6 +121,13 @@ test("convertible table source contains no combined-score or dynamic-state label
   assert.equal(source.includes('["dynamic_state", "动态状态"]'), false);
 });
 
+test("model settings never accept or persist a plaintext OpenAI key", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../../frontend/assets/app.js"), "utf8");
+  assert.equal(source.includes('id="openai-api-key"'), false);
+  assert.equal(source.includes("config.api_key ="), false);
+  assert.equal(source.includes('id="edit-openai-key"'), false);
+});
+
 test("strategy state codes render as concise Chinese labels", () => {
   assert.equal(strategyStateLabel("medium_status", "trend_confirmed"), "趋势已确认");
   assert.equal(strategyStateLabel("short_entry_status", "overheated_do_not_chase"), "过热不追");
