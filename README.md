@@ -144,10 +144,10 @@ PYTHONPATH=backend python -m superpower.cli.run_daily \
 
 开启 AI 解释时，需要在 `configs/model_config.json` 中启用 LLM。当前默认是 OpenAI；顶层 `provider` 用于日报/复核语言层，`chat.provider` 专门用于前端“AI 智能问答”：
 
-- `openai`：默认问答 provider。可在前端“策略参数 > AI 模型”里查看遮挡后的 Key、点击修改 Key、验证连通、读取账号可用模型并选择模型。
+- `openai`：默认问答 provider。可在前端“策略参数 > AI 模型”里粘贴 Key、保存并验证、读取账号可用模型并选择模型。
 - `opencode`：仅保留为可选底层 provider；当前产品默认不启用。
 
-配置也支持直接填写 `api_key`，但更推荐通过前端遮挡输入或 `.env`/系统环境变量管理，避免密钥进入 Git。
+前端填写的 Key 只保存在本机 `.env`，该文件已被 Git 忽略；页面和 `configs/model_config.json` 都不会保存或返回明文。也可以在启动程序前自行设置 `OPENAI_API_KEY` 环境变量。
 
 即便 AI 调用失败，日报仍会继续生成。
 

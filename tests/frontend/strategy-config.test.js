@@ -124,11 +124,12 @@ test("convertible table source contains no combined-score or dynamic-state label
   assert.equal(source.includes('["auxiliary_evidence", "四项依据"]'), true);
 });
 
-test("model settings never accept or persist a plaintext OpenAI key", () => {
+test("model settings accept a masked local key without putting it in model config", () => {
   const source = fs.readFileSync(path.join(__dirname, "../../frontend/assets/app.js"), "utf8");
-  assert.equal(source.includes('id="openai-api-key"'), false);
+  assert.equal(source.includes('id="openai-api-key" type="password"'), true);
+  assert.equal(source.includes('fetch("/api/model-config/key"'), true);
   assert.equal(source.includes("config.api_key ="), false);
-  assert.equal(source.includes('id="edit-openai-key"'), false);
+  assert.equal(source.includes('id="save-openai-key"'), true);
 });
 
 test("chat always uses the backend rule engine and treats AI as an optional explanation layer", () => {

@@ -291,12 +291,13 @@ async function saveModelConfig() {
 async function verifyOpenAiConnection() {
   if (!state.modelConfig) return;
   const status = document.getElementById("model-config-status");
+  const apiKey = (document.getElementById("openai-api-key")?.value || "").trim();
   if (status) status.textContent = "正在验证 OpenAI 连通性。";
   try {
     const response = await fetch("/api/model-config/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ apiKey }),
     });
     const result = await readJsonResponse(response);
     if (!response.ok || result.status !== "success") throw new Error(result.message || `HTTP ${response.status}`);
@@ -314,6 +315,46 @@ async function verifyOpenAiConnection() {
     state.openaiModelMessage = `验证失败：${error.message}`;
     renderModelConfig();
     if (state.data) render();
+  }
+}
+
+async function saveOpenAiKey() {
+  if (!state.modelConfig) return;
+  const input = document.getElementById("openai-api-key");
+  const apiKey = (input?.value || "").trim();
+  const status = document.getElementById("model-config-status");
+  if (!apiKey) {
+    if (status) status.textContent = "请先在 OpenAI Key 输入框中粘贴 Key。";
+    input?.focus();
+    return;
+  }
+  if (status) status.textContent = "正在验证并保存 Key。";
+  try {
+    const response = await fetch("/api/model-config/key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey }),
+    });
+    const result = await readJsonResponse(response);
+    if (!response.ok || result.status !== "success") throw new Error(result.message || `HTTP ${response.status}`);
+    if (!result.connected) {
+      state.openaiConnection = "warn";
+      state.openaiModelMessage = result.message || "Key 验证失败，尚未保存。";
+      if (status) status.textContent = state.openaiModelMessage;
+      return;
+    }
+    state.openaiConnection = "ok";
+    state.openaiModelMessage = result.message || "Key 已安全保存在本机。";
+    state.modelConfig.api_key_configured = true;
+    state.modelConfig.api_key_masked = result.api_key_masked || "已遮挡";
+    if (Array.isArray(result.models) && result.models.length) state.openaiModels = result.models;
+    if (input) input.value = "";
+    renderModelConfig();
+    if (status) status.textContent = state.openaiModelMessage;
+    if (state.data) render();
+  } catch (error) {
+    state.openaiConnection = "warn";
+    if (status) status.textContent = `保存失败：${error.message}`;
   }
 }
 
@@ -859,9 +900,11 @@ function renderModelConfig() {
       <div class="param-field span-2">
         <label>OpenAI Key <span class="key-health ${keyStatusClass}">${escapeHtml(keyStatusText)}</span></label>
         <div class="key-control-row">
-          <button id="verify-openai-key" class="button" type="button">验证连通</button>
+          <input id="openai-api-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="${config.api_key_configured ? `已配置 ${escapeHtml(config.api_key_masked || "") }，粘贴新 Key 可替换` : "粘贴 OpenAI API Key"}" />
+          <button id="save-openai-key" class="button primary" type="button">保存并验证</button>
+          <button id="verify-openai-key" class="button" type="button">仅验证</button>
         </div>
-        <small>Key 仅从环境变量 ${escapeHtml(config.api_key_env || "OPENAI_API_KEY")} 读取，不在页面或配置文件中保存。</small>
+        <small>Key 仅保存在这台电脑的本地环境文件中，不会写入模型配置，也不会在页面中显示明文。</small>
       </div>
       <p id="model-list-status" class="plain-text span-2">${escapeHtml(state.openaiModelMessage || "模型列表会按当前 key 自动读取。")}</p>
     </div>
@@ -2381,6 +2424,10 @@ document.getElementById("model-config-form")?.addEventListener("click", (event) 
   if (target.id === "verify-openai-key") {
     event.preventDefault();
     verifyOpenAiConnection();
+  }
+  if (target.id === "save-openai-key") {
+    event.preventDefault();
+    saveOpenAiKey();
   }
 });
 document.getElementById("asset-search")?.addEventListener("input", renderAssets);

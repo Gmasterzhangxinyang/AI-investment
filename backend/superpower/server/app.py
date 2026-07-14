@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -113,6 +114,9 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
             return
         if path.startswith("/api/model-config/verify"):
             self._verify_openai_connection()
+            return
+        if path.startswith("/api/model-config/key"):
+            self._save_openai_key()
             return
         if path.startswith("/api/model-config"):
             self._save_model_config()
@@ -543,6 +547,47 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
             }
         )
 
+    def _save_openai_key(self) -> None:
+        try:
+            payload = self._read_json_body()
+            api_key = str(payload.get("apiKey") or payload.get("api_key") or "").strip()
+            _validate_openai_api_key(api_key)
+            models = _fetch_openai_model_ids(api_key)
+            env_name = str(self._load_model_config().get("api_key_env") or "OPENAI_API_KEY").strip()
+            _write_local_env_secret(self.root_dir, env_name, api_key)
+            os.environ[env_name] = api_key
+        except ValueError as exc:
+            self._send_json({"status": "failed", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            self._send_json(
+                {
+                    "status": "success",
+                    "connected": False,
+                    "message": f"OpenAI 验证失败：HTTP {exc.code} {detail[:160]}",
+                }
+            )
+            return
+        except Exception as exc:
+            self._send_json(
+                {
+                    "status": "success",
+                    "connected": False,
+                    "message": f"OpenAI 验证失败：{exc}",
+                }
+            )
+            return
+        self._send_json(
+            {
+                "status": "success",
+                "connected": True,
+                "models": models,
+                "message": "Key 已安全保存在本机，OpenAI 连通正常。",
+                "api_key_masked": _mask_secret(api_key),
+            }
+        )
+
     def _read_json_body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length).decode("utf-8") if length else "{}"
@@ -570,6 +615,7 @@ def main() -> None:
     args = parser.parse_args()
 
     root_dir = args.root_dir.resolve()
+    _load_local_environment(root_dir)
     sources = load_data_sources(root_dir)
     etf_file = _resolve_config_path(root_dir, args.etf_file or Path(sources["etf_file"]))
     tl_file = _resolve_config_path(root_dir, args.tl_file or Path(sources["tl_file"]))
@@ -858,6 +904,53 @@ def _model_config_secret(config: dict[str, Any], value_key: str, env_key: str, d
         return value
     env_name = str(config.get(env_key) or default_env).strip()
     return os.environ.get(env_name, "").strip() if env_name else ""
+
+
+def _validate_openai_api_key(api_key: str) -> None:
+    if not api_key:
+        raise ValueError("请先填写 OpenAI Key。")
+    if "\n" in api_key or "\r" in api_key or len(api_key) > 4096:
+        raise ValueError("OpenAI Key 格式不正确。")
+
+
+def _load_local_environment(root_dir: Path) -> None:
+    env_path = root_dir / ".env"
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = re.match(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$", line)
+        if not match:
+            continue
+        name, value = match.groups()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ.setdefault(name, value)
+
+
+def _write_local_env_secret(root_dir: Path, env_name: str, value: str) -> None:
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", env_name):
+        raise ValueError("Key 环境变量名称无效。")
+    env_path = root_dir / ".env"
+    lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    pattern = re.compile(rf"^\s*(?:export\s+)?{re.escape(env_name)}\s*=")
+    replacement = f"{env_name}={value}"
+    updated: list[str] = []
+    replaced = False
+    for line in lines:
+        if pattern.match(line):
+            if not replaced:
+                updated.append(replacement)
+                replaced = True
+            continue
+        updated.append(line)
+    if not replaced:
+        updated.append(replacement)
+    env_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+    env_path.chmod(0o600)
 
 
 def _mask_secret(value: str) -> str:

@@ -48,7 +48,7 @@ It also uses local API endpoints for refresh jobs, PDF export, chat, asset detai
 - `Open Report`: links to the generated Excel workbook.
 - `Save Strategy Params`: writes `configs/strategy_params.json`; users must refresh data before new parameters affect reports.
 - `AI 智能问答`: chat starts in deterministic rule mode. The frontend asks for confirmation before enabling LLM calls; signals and rankings still come from backend rules.
-- `AI 模型`: reads and writes `configs/model_config.json`; users can view the masked OpenAI key, click to edit it, verify connectivity, refresh available OpenAI models, and choose the chat model. This only affects future AI chat calls.
+- `AI 模型`: reads and writes model choices in `configs/model_config.json`; users can enter an OpenAI key into a password field, save it to the git-ignored local `.env`, verify connectivity, refresh available models, and choose the chat model. The plaintext key is never returned to the browser or stored in model configuration.
 
 ## Missing Excel Behavior
 
