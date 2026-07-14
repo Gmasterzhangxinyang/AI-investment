@@ -138,6 +138,13 @@ test("chat always uses the backend rule engine and treats AI as an optional expl
   assert.equal(source.includes("ai_chat_not_enabled"), false);
 });
 
+test("chat keeps greetings lightweight and removes the English user label", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../../frontend/assets/app.js"), "utf8");
+  assert.equal(source.includes('result.intent?.name === "conversation"'), true);
+  assert.equal(source.includes('appendMessage("user", question, "")'), true);
+  assert.equal(source.includes('appendMessage("user", question, "You")'), false);
+});
+
 test("strategy state codes render as concise Chinese labels", () => {
   assert.equal(strategyStateLabel("medium_status", "trend_confirmed"), "趋势已确认");
   assert.equal(strategyStateLabel("short_entry_status", "overheated_do_not_chase"), "过热不追");

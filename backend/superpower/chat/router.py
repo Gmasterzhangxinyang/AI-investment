@@ -13,6 +13,9 @@ class ChatRouter:
         text = question.lower()
         entities = self._extract_entities(question, dashboard)
 
+        if self._is_conversation(question):
+            return ChatIntent("conversation", 0.99, {})
+
         if (
             any(token in text for token in ["原策略", "2.0", "v2", "趋势回踩"])
             and any(token in text for token in ["哪个", "对比", "相比", "区别", "更好", "差别"])
@@ -24,6 +27,10 @@ class ChatRouter:
             return ChatIntent("strategy_stability", 0.94, entities)
         if "策略" in text and any(token in text for token in ["现在使用", "当前使用", "启用哪个", "默认策略"]):
             return ChatIntent("strategy_params", 0.95, entities)
+
+        ranking_entities = self._etf_ranking_entities(question)
+        if ranking_entities is not None:
+            return ChatIntent("etf_ranking", 0.96, {**entities, **ranking_entities})
 
         if (entities.get("code") or entities.get("name")) and "etf" in text:
             if any(token in text for token in ["状态", "怎么样", "如何", "哪里", "问题", "量能", "趋势", "原因", "为什么", "触发", "分析", "解释"]):
@@ -66,6 +73,44 @@ class ChatRouter:
                 return ChatIntent("etf_exit", 0.9, entities)
             return ChatIntent("etf_entry", 0.9, entities)
         return ChatIntent("daily_report", 0.62, entities)
+
+    def _is_conversation(self, question: str) -> bool:
+        normalized = re.sub(r"[\s，。！？!?、~～]+", "", question).lower()
+        return normalized in {
+            "你好",
+            "你好呀",
+            "您好",
+            "嗨",
+            "哈喽",
+            "hello",
+            "hi",
+            "在吗",
+            "谢谢",
+            "谢谢你",
+        }
+
+    def _etf_ranking_entities(self, question: str) -> dict[str, str] | None:
+        text = question.lower().replace(" ", "")
+        if "etf" not in text:
+            return None
+        ranking_tokens = ["最高", "最低", "最大", "最小", "最强", "最弱", "排名", "排行", "第一", "top", "前几", "前十", "前10"]
+        if not any(token in text for token in ranking_tokens):
+            return None
+
+        metric = ""
+        if any(token in text for token in ["收盘", "价格", "净值"]):
+            metric = "close"
+        elif any(token in text for token in ["量能", "量比", "成交量"]):
+            metric = "vol_ratio60"
+        elif any(token in text for token in ["份额", "申购", "赎回"]):
+            metric = "share_change"
+        elif any(token in text for token in ["评分", "分数", "强弱", "排名", "最强", "最弱"]):
+            metric = "score"
+
+        direction = "asc" if any(token in text for token in ["最低", "最小", "最弱", "倒数"]) else "desc"
+        limit_match = re.search(r"(?:top|前)\s*(\d{1,2})", text, flags=re.I)
+        limit = min(max(int(limit_match.group(1)), 1), 10) if limit_match else 3
+        return {"metric": metric, "direction": direction, "limit": str(limit)}
 
     def _extract_entities(self, question: str, dashboard: dict[str, Any]) -> dict[str, str]:
         entities: dict[str, str] = {}

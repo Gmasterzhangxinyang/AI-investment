@@ -342,6 +342,16 @@ class ChatOrchestrator:
     def _deterministic_evidence_answer(self, question: str, pack: EvidencePack) -> str:
         text = question.lower()
         tools = {tool.tool: tool for tool in pack.tools}
+
+        if pack.intent.name == "conversation":
+            if "谢谢" in question:
+                return "不客气。你可以继续问某只 ETF、TL、可转债，或者直接问当前排名、指标和策略原因。"
+            return "你好呀，我在。你可以直接问：哪只 ETF 强弱分最高、收盘价最高的是谁、当前 TL 状态，或者某只可转债为什么排在这里。"
+
+        etf_ranking_answer = self._etf_ranking_answer(pack)
+        if etf_ranking_answer:
+            return etf_ranking_answer
+
         rule_contract = tools.get("get_rule_contract")
         params = {}
         if rule_contract and isinstance(rule_contract.data, dict):
@@ -436,6 +446,47 @@ class ChatOrchestrator:
                     )
 
         return ""
+
+    def _etf_ranking_answer(self, pack: EvidencePack) -> str:
+        if pack.intent.name != "etf_ranking":
+            return ""
+        tool = next((item for item in pack.tools if item.tool == "get_etf_ranking"), None)
+        data = tool.data if tool and isinstance(tool.data, dict) else {}
+        metric = str(data.get("metric") or "")
+        if not metric:
+            return (
+                "“最高的 ETF”还缺少比较指标。你想看哪一种：强弱分、收盘价、量能倍数，还是份额变化？\n\n"
+                "例如可以问：‘强弱分最高的 ETF’或‘收盘价最高的 ETF’。"
+            )
+        rows = data.get("rows") or []
+        metric_label = str(data.get("metric_label") or metric)
+        if not rows:
+            return f"当前 ETF 数据里没有可用于比较“{metric_label}”的有效值。"
+
+        direction = str(data.get("direction") or "desc")
+        first = rows[0]
+        name = str(first.get("name") or "--")
+        code = str(first.get("code") or "--")
+        value = self._fmt_metric(first.get("metric_value"))
+        direction_label = "最低" if direction == "asc" else "最高"
+        lines = [
+            f"截至报告日期 {pack.report_date}，{metric_label}{direction_label}的 ETF 是{name}（{code}），{metric_label}为 {value}。"
+        ]
+        if len(rows) > 1:
+            ranking = "；".join(
+                f"{index}. {row.get('name') or '--'}（{row.get('code') or '--'}）{self._fmt_metric(row.get('metric_value'))}"
+                for index, row in enumerate(rows, start=1)
+            )
+            lines.append(f"按同一口径排序：{ranking}。")
+        if metric == "close":
+            lines.append("提醒：收盘价只是每份基金的价格，不代表趋势更强或收益更好；如果想看策略强弱，应按强弱分排序。")
+        elif metric == "vol_ratio60":
+            lines.append("这里比较的是当日成交量相对前60日均量的倍数，不是绝对成交额。")
+        elif metric == "share_change":
+            lines.append("份额变化属于资金申购赎回辅助信息，不直接等同于买入信号。")
+        else:
+            lines.append("强弱分用于横向排序，不等同于建仓信号；是否入场仍以策略触发状态为准。")
+        return "\n\n".join(lines)
 
     def _strategy_diagnosis_answer(self, pack: EvidencePack, rule_contract: Any) -> str:
         if pack.intent.name not in {"strategy_comparison", "strategy_stability", "historical_diagnostics"}:

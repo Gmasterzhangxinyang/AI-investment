@@ -29,6 +29,55 @@ def test_router_understands_strategy_comparison_stability_and_diagnostics() -> N
     assert router.route("历史诊断怎么看？", {}).name == "historical_diagnostics"
 
 
+def test_router_handles_greetings_and_etf_metric_rankings() -> None:
+    router = ChatRouter()
+
+    assert router.route("你好呀", {}).name == "conversation"
+    explicit = router.route("查下收盘价最高的ETF", {})
+    assert explicit.name == "etf_ranking"
+    assert explicit.entities["metric"] == "close"
+    ambiguous = router.route("查下最高的ETF", {})
+    assert ambiguous.name == "etf_ranking"
+    assert ambiguous.entities["metric"] == ""
+
+
+def test_etf_ranking_uses_full_dashboard_and_answers_directly() -> None:
+    dashboard = {
+        "reportDate": "2026-07-10",
+        "etf": {
+            "all_signals": [
+                {"name": "低价ETF", "code": "111111.SH", "close": 1.2, "score": 90},
+                {"name": "高价ETF", "code": "222222.SH", "close": 9.1, "score": 40},
+                {"name": "中价ETF", "code": "333333.SH", "close": 4.8, "score": 70},
+            ]
+        },
+    }
+    intent = ChatRouter().route("查下收盘价最高的ETF", dashboard)
+    tools = ResearchToolbox(dashboard).collect(intent)
+    pack = EvidencePack(report_date="2026-07-10", intent=intent, rulebook=[], tools=tools)
+
+    assert tools[0].data["rows"][0]["code"] == "222222.SH"
+    answer = ChatOrchestrator(ROOT)._deterministic_evidence_answer("查下收盘价最高的ETF", pack)
+    assert "高价ETF（222222.SH）" in answer
+    assert "9.1" in answer
+    assert "不代表趋势更强" in answer
+
+
+def test_ambiguous_etf_ranking_asks_for_a_metric() -> None:
+    dashboard = {"etf": {"all_signals": [{"name": "测试ETF", "code": "111111.SH", "close": 1.2}]}}
+    intent = ChatRouter().route("查下最高的ETF", dashboard)
+    pack = EvidencePack(
+        report_date="2026-07-10",
+        intent=intent,
+        rulebook=[],
+        tools=ResearchToolbox(dashboard).collect(intent),
+    )
+
+    answer = ChatOrchestrator(ROOT)._deterministic_evidence_answer("查下最高的ETF", pack)
+    assert "还缺少比较指标" in answer
+    assert "强弱分" in answer and "收盘价" in answer
+
+
 def test_rule_contract_follows_active_etf_strategy(tmp_path: Path) -> None:
     config_dir = tmp_path / "configs"
     config_dir.mkdir()

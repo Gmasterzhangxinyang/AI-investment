@@ -1789,7 +1789,7 @@ async function submitChat(question) {
   if (!question || state.isChatting) return;
   state.isChatting = true;
   let timeoutId = null;
-  appendMessage("user", question, "You");
+  appendMessage("user", question, "");
   const thinking = appendMessage("assistant", "正在由后端规则引擎读取最新投研证据。", "AI");
   const liveStream = createThinkingStream(thinking, question);
   liveStream.start();
@@ -1843,9 +1843,11 @@ async function submitChat(question) {
     }
     liveStream.finish(result);
     await streamAnswer(thinking, result.answer);
-    thinking.querySelector(".message-body span").textContent =
-      `Trace ${result.traceId} · ${result.intent?.name || "agent"} · ${result.llmModel || (result.llmUsed ? "llm" : "deterministic")}`;
-    attachAnalysisDetails(thinking, result, question);
+    const isConversation = result.intent?.name === "conversation";
+    thinking.querySelector(".message-body span").textContent = isConversation
+      ? "投研助手"
+      : `Trace ${result.traceId} · ${result.intent?.name || "agent"} · ${result.llmModel || (result.llmUsed ? "llm" : "deterministic")}`;
+    if (!isConversation) attachAnalysisDetails(thinking, result, question);
     renderAgentRuntime(result);
     rememberChatTurn(question, result, result.answer);
   } catch (error) {
@@ -1971,6 +1973,10 @@ function createThinkingStream(article, question) {
     },
     finish(result) {
       if (timer) window.clearInterval(timer);
+      if (result.intent?.name === "conversation") {
+        stream.remove();
+        return;
+      }
       const steps = (result.steps || []).slice(0, 8);
       stream.classList.remove("is-live");
       stream.classList.add("is-complete");

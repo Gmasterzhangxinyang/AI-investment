@@ -21,6 +21,10 @@ class ResearchToolbox:
         self.repository = repository
 
     def collect(self, intent: ChatIntent) -> list[ToolResult]:
+        if intent.name == "conversation":
+            return []
+        if intent.name == "etf_ranking":
+            return [self.get_etf_ranking(intent.entities)]
         if intent.name in {"database_inventory", "asset_list"}:
             return [self.get_data_map(), self.get_daily_summary(), self.get_database_inventory()]
         if intent.name in {"strategy_params", "strategy_comparison", "strategy_stability", "historical_diagnostics"}:
@@ -349,6 +353,50 @@ class ResearchToolbox:
             },
         )
 
+    def get_etf_ranking(self, entities: dict[str, str]) -> ToolResult:
+        metric = str(entities.get("metric") or "")
+        direction = str(entities.get("direction") or "desc")
+        try:
+            limit = min(max(int(entities.get("limit") or 3), 1), 10)
+        except (TypeError, ValueError):
+            limit = 3
+        metric_labels = {
+            "score": "强弱分",
+            "close": "收盘价",
+            "vol_ratio60": "量能倍数（相对60日均量）",
+            "share_change": "份额变化",
+        }
+        rows = (self.dashboard.get("etf") or {}).get("all_signals") or self.dashboard.get("etfAllSignals") or []
+        valid_rows = [row for row in rows if metric and self._safe_float(row.get(metric)) != float("-inf")]
+        sorted_rows = sorted(valid_rows, key=lambda row: self._safe_float(row.get(metric)), reverse=direction != "asc")
+        compact_rows = []
+        for index, row in enumerate(sorted_rows[:limit], start=1):
+            compact = self._compact_etf_row(row)
+            compact["rank"] = index
+            compact["metric"] = metric
+            compact["metric_value"] = row.get(metric)
+            compact_rows.append(compact)
+        label = metric_labels.get(metric, "未指定指标")
+        summary = (
+            f"ETF 全量 {len(rows)} 只，按{label}{'升序' if direction == 'asc' else '降序'}返回 {len(compact_rows)} 只。"
+            if metric
+            else f"ETF 全量 {len(rows)} 只；用户尚未指定排序指标。"
+        )
+        return ToolResult(
+            tool="get_etf_ranking",
+            title="ETF 指标排序",
+            source="dashboard.etf.all_signals",
+            summary=summary,
+            data={
+                "metric": metric,
+                "metric_label": label,
+                "direction": direction,
+                "total": len(rows),
+                "rows": compact_rows,
+                "supported_metrics": metric_labels,
+            },
+        )
+
     def get_etf_single_asset(self, code: str) -> ToolResult:
         if self.repository is None:
             return ToolResult(
@@ -499,6 +547,7 @@ class ResearchToolbox:
             "display_action": row.get("display_action") or row.get("action"),
             "score": row.get("score"),
             "close": row.get("close"),
+            "share_change": row.get("share_change"),
             "ma5": row.get("ma5"),
             "ma10": row.get("ma10"),
             "ma20": row.get("ma20"),
