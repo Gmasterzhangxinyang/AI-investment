@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI 投研工作台</title>
-    <link rel="stylesheet" href="./assets/styles.css?v=20260714-system-status" />
+    <link rel="stylesheet" href="./assets/styles.css?v=20260714-parameter-guide" />
   </head>
   <body>
     <div class="app-shell">
@@ -468,9 +468,9 @@
           <div class="asset-workspace">
             <div class="module-hero">
               <div>
-                <p class="eyebrow">参数说明</p>
-                <h2>策略参数说明</h2>
-                <p>这里解释参数“改了会发生什么”。参数保存后不会改写已生成日报，需要点击一键刷新后才会进入新的策略计算。</p>
+                <p class="eyebrow">规则说明</p>
+                <h2>策略规则与参数</h2>
+                <p>这里按当前系统的真实规则解释各项信号。参数保存后不会改写已生成日报，需要点击一键刷新后才会进入新的策略计算。</p>
               </div>
               <div class="shortcut-row">
                 <a href="#settings">修改参数</a>
@@ -479,55 +479,28 @@
             </div>
 
             <div class="page-grid">
-              <article class="card">
-                <h3>ETF 参数</h3>
-                <div class="param-doc-list">
-                  <div><strong>建仓量能倍数</strong><span>今日成交量 / 前 60 个交易日均量。调高后建仓更少、更保守；调低后信号更多，但噪音也更多。</span></div>
-                  <div><strong>跌破 MA10 平仓量能</strong><span>持仓 ETF 跌破 MA10 时，需要同步放量才提示平仓。调低会更敏感。</span></div>
-                  <div><strong>跌破 MA5 平仓量能</strong><span>更短线的风险提示阈值。通常不宜低于 MA10 平仓量能太多。</span></div>
-                  <div><strong>趋势 / MACD / 量能权重</strong><span>影响 ETF 全量强弱评分，不等于触发信号。触发仍要看完整规则条件。</span></div>
-                </div>
-              </article>
-
-              <article class="card">
-                <h3>TL 参数</h3>
-                <div class="param-doc-list">
-                  <div><strong>日线 KDJ 窗口</strong><span>回看最近几个交易日是否出现过 J 值低点。窗口越长，越容易覆盖更早低点。</span></div>
-                  <div><strong>日线 J 低位阈值</strong><span>J 值低于该阈值才算低位。阈值越高，低位条件越容易满足。</span></div>
-                  <div><strong>周线 KDJ 窗口 / J 低位阈值</strong><span>用于确认周线是否出现低位后回升，优先级高于日线短期信号。</span></div>
-                  <div><strong>周线不做交易硬否决</strong><span>开启后，周线不利时日线不能强行升级为建仓候选。</span></div>
-                </div>
+              <article class="card span-2">
+                <h3>ETF 两套策略</h3>
+                <p class="plain-text">两套策略相互独立。页面会标明当前配置使用哪一套，另一套保留为可选插件。</p>
+                <div id="etf-guide-content"></div>
               </article>
 
               <article class="card span-2">
-                <h3>可转债风控参数</h3>
-                <div class="param-guide-grid">
-                  <div><strong>最低价格 / 最高价格上限</strong><span>决定普通候选池的价格范围。当前模型聚焦 100 到 140 元区间。</span></div>
-                  <div><strong>高 YTM 硬排除</strong><span>YTM 过高通常反映信用或兑付担忧，不会被当成低风险高收益。</span></div>
-                  <div><strong>严重负 YTM 硬排除</strong><span>YTM 过低说明债底收益或价格性价比不足，低于阈值不进入普通 Top 候选。</span></div>
-                  <div><strong>高溢价扣分线 / 硬排除</strong><span>溢价率超过扣分线会降分；达到硬排除线则不进入普通 Top 候选。</span></div>
-                  <div><strong>不强赎公告有效天数</strong><span>触发强赎价但有不强赎公告时，用该天数判断公告是否仍有效。</span></div>
-                  <div><strong>强赎未明硬排除</strong><span>开启后，触发强赎价但没有有效不强赎公告的转债默认直接排除。</span></div>
-                </div>
+                <h3>TL：技术状态 + 份额变化辅助</h3>
+                <div id="tl-guide-content" class="param-guide-grid"></div>
               </article>
 
               <article class="card span-2">
-                <h3>可转债评分与分层</h3>
-                <div class="table-wrap">
-                  <table>
-                    <thead>
-                      <tr><th>维度</th><th>含义</th><th>调高权重后的影响</th></tr>
-                    </thead>
-                    <tbody>
-                      <tr><td>基本面</td><td>扣非净利润增长、增长加速、利润质量。</td><td>更偏业绩改善标的。</td></tr>
-                      <tr><td>溢价率</td><td>转股溢价率质量，溢价越高通常性价比越弱。</td><td>更压制高溢价标的。</td></tr>
-                      <tr><td>YTM 质量</td><td>到期收益率质量，不是越高越好，也不是越负越好。</td><td>更重视债底收益的合理性。</td></tr>
-                      <tr><td>信用</td><td>评级、价格、YTM 风险共同影响信用得分。</td><td>更偏信用稳健标的。</td></tr>
-                      <tr><td>强赎状态</td><td>强赎触发、不强赎公告有效性和公告风险。</td><td>更压制强赎相关风险。</td></tr>
-                    </tbody>
-                  </table>
+                <h3>可转债基础评分与风控</h3>
+                <div id="cb-base-guide-content" class="param-guide-grid"></div>
+              </article>
+
+              <article class="card span-2">
+                <div class="guide-title-row">
+                  <h3>可转债四项短期动态辅助</h3>
+                  <span id="cb-auxiliary-guide-status" class="status-pill">--</span>
                 </div>
-                <p class="plain-text">Top 表只展示合格候选，不会从弱观察或风险观察里补足 10 只。评分高但存在硬风险时，仍可能不进入 Top 候选。</p>
+                <div id="cb-auxiliary-guide-content" class="param-guide-grid"></div>
               </article>
 
               <article class="card">
@@ -554,7 +527,7 @@
       </main>
     </div>
 
-    <script src="./assets/strategy-config.js?v=20260714-system-status"></script>
-    <script src="./assets/app.js?v=20260714-system-status"></script>
+    <script src="./assets/strategy-config.js?v=20260714-parameter-guide"></script>
+    <script src="./assets/app.js?v=20260714-parameter-guide"></script>
   </body>
 </html>

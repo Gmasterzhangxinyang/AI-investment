@@ -979,6 +979,32 @@ button.button {
   line-height: 1.9;
 }
 
+.guide-strategy-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfbfb;
+}
+
+.guide-strategy-panel.is-active {
+  border-color: #a9d8bd;
+  background: #f4fbf7;
+}
+
+.guide-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.guide-title-row h3 {
+  margin: 0;
+}
+
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

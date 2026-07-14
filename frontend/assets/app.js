@@ -654,6 +654,43 @@ function renderStrategyParams() {
       </section>
     `)
     .join("");
+  renderParameterGuide();
+}
+
+function renderParameterGuide() {
+  if (!state.strategyParams) return;
+  const guide = ETFStrategyConfig.parameterGuideModel(state.strategyParams);
+  const etfTarget = document.getElementById("etf-guide-content");
+  const tlTarget = document.getElementById("tl-guide-content");
+  const cbBaseTarget = document.getElementById("cb-base-guide-content");
+  const cbAuxiliaryTarget = document.getElementById("cb-auxiliary-guide-content");
+  const cbAuxiliaryStatus = document.getElementById("cb-auxiliary-guide-status");
+
+  if (etfTarget) {
+    etfTarget.innerHTML = guide.etfStrategies.map((strategy) => `
+      <section class="guide-strategy-panel ${strategy.isActive ? "is-active" : ""}">
+        <div class="guide-title-row">
+          <strong>${escapeHtml(strategy.title)}</strong>
+          <span class="status-pill ${strategy.isActive ? "ok" : ""}">${strategy.isActive ? "当前配置" : "可选插件"}</span>
+        </div>
+        <div class="param-guide-grid">${renderGuideItems(strategy.items)}</div>
+      </section>
+    `).join("");
+  }
+  if (tlTarget) tlTarget.innerHTML = renderGuideItems(guide.tlItems);
+  if (cbBaseTarget) cbBaseTarget.innerHTML = renderGuideItems(guide.cbBaseItems);
+  if (cbAuxiliaryTarget) cbAuxiliaryTarget.innerHTML = renderGuideItems(guide.cbAuxiliary.items);
+  if (cbAuxiliaryStatus) {
+    cbAuxiliaryStatus.textContent = guide.cbAuxiliary.enabled ? "已启用" : "未启用";
+    cbAuxiliaryStatus.classList.toggle("ok", guide.cbAuxiliary.enabled);
+  }
+}
+
+function renderGuideItems(items) {
+  return (items || []).map((item) => {
+    const [title, ...detailParts] = String(item).split("：");
+    return `<div><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detailParts.join("："))}</span></div>`;
+  }).join("");
 }
 
 function renderEtfStrategySelector() {

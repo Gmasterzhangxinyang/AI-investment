@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, auxiliaryStateLabel, historicalComparisonRows, actionableSystemNotices, systemStatusLabel, qualityMetric } = require("../../frontend/assets/strategy-config.js");
+const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, auxiliaryStateLabel, historicalComparisonRows, actionableSystemNotices, systemStatusLabel, qualityMetric, parameterGuideModel } = require("../../frontend/assets/strategy-config.js");
 
 test("deepMerge preserves dormant profiles and replaces arrays", () => {
   const current = { etf: { diagnostic_strategies: ["legacy_v1"], strategy_profiles: { future_v3: { kept: true } } } };
@@ -183,11 +183,68 @@ test("system status reads total valid history instead of the recent display wind
   assert.equal(qualityMetric([], "TL有效交易日", 20), 20);
 });
 
+test("parameter guide follows current ETF TL and convertible-bond rules", () => {
+  const guide = parameterGuideModel({
+    etf: {
+      active_strategy: "legacy_v1",
+      buy_volume_ratio_min: 1.1,
+      sell_ma10_volume_ratio_min: 1.2,
+      sell_ma5_volume_ratio_min: 1.2,
+      strategy_profiles: {
+        trend_pullback_v2: {
+          medium_trend: { minimum_history_rows: 180, ma20_slope_lookback: 5, ma20_flat_tolerance: 0.003 },
+          short_entry: {
+            confirmation_window: 3,
+            overheat_daily_return_min: 0.04,
+            overheat_body_ratio_min: 0.6,
+            overheat_volume_ratio_min: 1.8,
+            overheat_ma5_distance_min: 0.03,
+            overheat_cooldown_days: 3,
+            pullback_max_age: 10,
+          },
+        },
+      },
+    },
+    tl: {
+      fund_flow: {
+        light_threshold: 0.03,
+        large_threshold: 0.05,
+        extreme_threshold: 0.07,
+        review_threshold: 0.2,
+        rolling_days: 5,
+        rolling_direction_threshold: 0.08,
+      },
+    },
+    convertible_bond: {
+      min_price: 100,
+      price_limit: 140,
+      high_ytm_hard_exclude: 15,
+      severe_negative_ytm_hard_exclude: -5,
+      high_premium_penalty_threshold: 35,
+      high_premium_hard_exclude: 50,
+      auxiliary_overlay: { enabled: true, overlay_id: "dynamic_v2", settings: {} },
+    },
+  });
+
+  assert.equal(guide.etfStrategies.find((item) => item.strategyId === "legacy_v1").isActive, true);
+  assert.equal(guide.etfStrategies.find((item) => item.strategyId === "trend_pullback_v2").isActive, false);
+  assert.match(guide.etfStrategies.find((item) => item.strategyId === "trend_pullback_v2").items.join(" "), /5.*MA20.*0\.30%/);
+  assert.match(guide.etfStrategies.find((item) => item.strategyId === "trend_pullback_v2").items.join(" "), /MA5.*MA10.*MACD/);
+  assert.match(guide.tlItems.join(" "), /0\.03.*0\.05.*0\.07/);
+  assert.match(guide.tlItems.join(" "), /近 5 日.*0\.08/);
+  assert.equal(guide.cbAuxiliary.enabled, true);
+  assert.match(guide.cbAuxiliary.items.join(" "), /正股涨跌.*转债涨跌.*相对强弱.*溢价率变化/);
+  assert.match(guide.cbAuxiliary.items.join(" "), /不改变原始分数和排名/);
+});
+
 test("system navigation hides raw agent audit and exposes technical details on demand", () => {
   const html = fs.readFileSync(path.join(__dirname, "../../frontend/index.html"), "utf8");
   const styles = fs.readFileSync(path.join(__dirname, "../../frontend/assets/styles.css"), "utf8");
   assert.equal(html.includes('<a href="#agents">运行审计</a>'), false);
   assert.equal(html.includes('href="#data">系统状态</a>'), true);
+  assert.equal(html.includes('id="etf-guide-content"'), true);
+  assert.equal(html.includes('id="tl-guide-content"'), true);
+  assert.equal(html.includes('id="cb-auxiliary-guide-content"'), true);
   assert.equal(html.includes('id="technical-details"'), true);
   assert.equal(html.includes("今日更新状态"), true);
   assert.equal(styles.includes(".system-technical-details:not([open]) > .technical-sections"), true);
