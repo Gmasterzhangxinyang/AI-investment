@@ -31,10 +31,9 @@ const pageTitles = {
   signals: "今日信号",
   watchlist: "关注池",
   assets: "标的档案",
-  data: "数据状态",
-  agents: "运行审计",
-  settings: "策略参数",
-  "param-guide": "参数说明",
+  data: "系统状态",
+  settings: "策略设置",
+  "param-guide": "规则说明",
 };
 
 const refreshStepLabels = {
@@ -178,9 +177,10 @@ async function loadDashboard() {
     const response = await fetch(`/outputs/latest/dashboard.json?ts=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     state.data = await response.json();
-    status.textContent = "数据正常";
-    status.classList.add("ok");
-    status.classList.remove("warn");
+    const systemStatus = ETFStrategyConfig.systemStatusLabel(state.data);
+    status.textContent = systemStatus;
+    status.classList.toggle("ok", systemStatus === "数据已更新");
+    status.classList.toggle("warn", systemStatus !== "数据已更新");
     render();
     loadDbStatus();
     loadAssets();
@@ -294,6 +294,7 @@ async function loadDbStatus() {
   } catch (error) {
     state.dbStatus = null;
     container.innerHTML = `<div class="context-item"><span>状态</span><strong>不可用</strong></div><div class="context-item"><span>原因</span><strong>${escapeHtml(error.message)}</strong></div>`;
+    renderSystemStatus({});
   }
 }
 
@@ -302,25 +303,51 @@ function renderDbStatus(result) {
   const latest = result.latestRun || {};
   const counts = result.tableCounts || {};
   const items = [
-    ["数据库文件", result.exists ? "已连接" : "缺失"],
-    ["日志模式", result.pragmas?.journal_mode || "--"],
-    ["结构版本", result.pragmas?.user_version ?? "--"],
-    ["最近运行", latest.run_id || "--"],
-    ["报告日期", latest.report_date || "--"],
-    ["运行状态", latest.status || "--"],
-    ["标的数量", counts.asset_master ?? 0],
-    ["行情指标行", counts.market_daily_indicators ?? 0],
-    ["ETF明细行", counts.etf_daily_bars ?? 0],
-    ["ETF信号行", counts.etf_daily_signals ?? 0],
-    ["TL信号行", counts.tl_daily_signals ?? 0],
-    ["可转债行", counts.convertible_bond_snapshots ?? 0],
-    ["刷新任务", counts.refresh_jobs ?? 0],
-    ["质检记录", counts.data_quality_checks ?? 0],
-    ["运行审计", counts.agent_runs ?? 0],
+    ["本地存储", result.exists ? "已连接" : "未连接"],
+    ["最近更新编号", latest.run_id || "--"],
+    ["数据日期", latest.report_date || "--"],
+    ["写入结果", latest.status === "success" ? "已写入" : latest.status || "--"],
+    ["标的档案", counts.asset_master ?? 0],
+    ["行情记录", counts.market_daily_indicators ?? 0],
+    ["ETF记录", counts.etf_daily_bars ?? 0],
+    ["TL记录", counts.tl_daily_signals ?? 0],
+    ["可转债记录", counts.convertible_bond_snapshots ?? 0],
   ];
   container.innerHTML = items
     .map((item) => `<div class="context-item"><span>${escapeHtml(item[0])}</span><strong>${escapeHtml(item[1])}</strong></div>`)
     .join("");
+  renderSystemStatus(result);
+}
+
+function renderSystemStatus(result = state.dbStatus || {}) {
+  const container = document.getElementById("system-status-grid");
+  const attention = document.getElementById("system-attention-list");
+  if (!container || !attention || !state.data) return;
+  const data = state.data;
+  const sources = data.sourceManifest || [];
+  const etfCount = Number(data.etf?.counts?.all_signals ?? data.etf?.all_signals?.length ?? 0);
+  const tlCount = Number(data.tl?.recent?.length ?? data.tlRecent?.length ?? 0);
+  const cbCounts = data.convertible_bond?.counts || {};
+  const cbCount = Number(cbCounts.ranked_candidates || 0) + Number(cbCounts.excluded || 0);
+  const statusLabel = ETFStrategyConfig.systemStatusLabel(data);
+  const generatedAt = String(data.run_info?.generated_at || "--").replace("T", " ").slice(0, 19);
+  const items = [
+    ["更新结果", statusLabel],
+    ["最近更新时间", generatedAt],
+    ["ETF数据", `已读取 ${etfCount} 只`],
+    ["TL数据", `已读取 ${tlCount} 日`],
+    ["可转债数据", `已读取 ${cbCount} 只`],
+    ["源文件", `${sources.filter((row) => row.exists).length}/${sources.length || 3} 已读取`],
+  ];
+  container.innerHTML = items
+    .map((item) => `<div class="context-item"><span>${escapeHtml(item[0])}</span><strong>${escapeHtml(item[1])}</strong></div>`)
+    .join("");
+
+  const notices = ETFStrategyConfig.actionableSystemNotices(data.run_info?.warnings || []);
+  attention.innerHTML = notices.length
+    ? `<strong>需要处理</strong><ul>${notices.map((notice) => `<li>${escapeHtml(notice)}</li>`).join("")}</ul>`
+    : `<strong>无需处理</strong><p>三类数据均已读取，可以正常查看本次结果。</p>`;
+  attention.classList.toggle("has-warning", notices.length > 0);
 }
 
 async function loadAssets() {
@@ -1102,16 +1129,16 @@ function render() {
     [["item", "识别项"], ["status", "状态"], ["detail", "详情"], ["note", "处理说明"]],
   );
   renderTable("quality-table", data.dataQuality || [], [
-    ["item", "识别项"],
-    ["status", "状态"],
-    ["detail", "详情"],
-    ["note", "处理说明"],
+    ["item", "检查项"],
+    ["status", "结果"],
+    ["detail", "当前值"],
+    ["note", "说明"],
   ]);
   renderTable("source-table", data.sourceManifest || [], [
-    ["source_type", "类型"],
-    ["exists", "存在"],
+    ["source_type", "数据类型"],
+    ["exists", "是否找到"],
     ["modified_at", "修改时间"],
-    ["size_bytes", "大小"],
+    ["size_bytes", "文件大小"],
     ["sha256", "SHA256"],
     ["archive_path", "归档路径"],
   ]);
@@ -1123,15 +1150,14 @@ function render() {
   const auditRows = (data.agentAudit || []).map((row) => ({
     ...row,
     agent: businessStepName(row.agent),
+    status_label: row.status === "success" ? "完成" : row.status === "warning" ? "有提示" : row.status === "failed" ? "失败" : row.status,
+    duration_text: Number.isFinite(Number(row.duration_ms)) ? `${(Number(row.duration_ms) / 1000).toFixed(1)}秒` : "--",
   }));
   renderTable("agent-table", auditRows, [
-    ["agent", "流程"],
-    ["metric_role", "职责"],
-    ["metric_skill", "能力"],
-    ["status", "状态"],
+    ["agent", "步骤"],
+    ["status_label", "结果"],
     ["message", "说明"],
-    ["metric_outputs", "输出合同"],
-    ["duration_ms", "耗时ms"],
+    ["duration_text", "耗时"],
   ]);
 }
 
@@ -1196,7 +1222,7 @@ function renderContext(summary) {
     "TL MACD/KDJ择时",
     "可转债排序",
     "数据质检",
-    "运行审计日志",
+    "系统运行记录",
   ];
   document.getElementById("context-sources").innerHTML = sources.map((item) => `<li>${item}</li>`).join("");
 }
@@ -2242,7 +2268,7 @@ function localAnswer(question) {
     return `当前 ETF 建仓候选数量为 ${buyCount}，关注池数量为 ${watchCount}，平仓提示数量为 ${sellCount}。具体标的和触发字段可在“策略信号”和“关注池”页面查看。`;
   }
   if (question.includes("数据") || question.includes("质量")) {
-    return `当前系统已识别风险项为 ${riskItems}。这些不是系统错误，而是按客户规则识别出的强赎、信用、低价、高YTM、低评级或覆盖范围提示。请到“数据状态”查看具体处理说明。`;
+    return `当前系统已识别风险项为 ${riskItems}。这些不是系统错误，而是按客户规则识别出的强赎、信用、低价、高YTM、低评级或覆盖范围提示。请到“系统状态”查看具体处理说明。`;
   }
   return data.researchSummary?.[0]?.content || "当前没有可用摘要，请先刷新数据。";
 }
@@ -2253,7 +2279,8 @@ function reportUrl(path) {
 }
 
 function setActiveView() {
-  const id = (window.location.hash || "#chat").slice(1);
+  const requestedId = (window.location.hash || "#chat").slice(1);
+  const id = requestedId === "agents" ? "data" : requestedId;
   const activeId = pageTitles[id] ? id : "chat";
   document.querySelectorAll(".view").forEach((view) => {
     view.classList.toggle("active", view.id === activeId);

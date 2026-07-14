@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, auxiliaryStateLabel, historicalComparisonRows } = require("../../frontend/assets/strategy-config.js");
+const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, auxiliaryStateLabel, historicalComparisonRows, actionableSystemNotices, systemStatusLabel } = require("../../frontend/assets/strategy-config.js");
 
 test("deepMerge preserves dormant profiles and replaces arrays", () => {
   const current = { etf: { diagnostic_strategies: ["legacy_v1"], strategy_profiles: { future_v3: { kept: true } } } };
@@ -160,4 +160,29 @@ test("historical comparison keeps 1 3 5 10 and 20 trading day horizons", () => {
     positive_return_rate: 0.5,
   }));
   assert.deepEqual(historicalComparisonRows(rows).map((row) => row.horizon), [1, 3, 5, 10, 20]);
+});
+
+test("system notices hide test-environment date differences and technical row noise", () => {
+  const warnings = [
+    "ETF最新日期：2026-07-03。若不是上一交易日附近，需确认 Wind 是否刷新",
+    "ETF/TL最新日期一致：ETF=2026-07-03 TL=2026-07-10。两者不一致时报告仍可出，但需人工复核",
+    "ETF无效交易行过滤数：43835。空模板行不进入指标计算",
+    "ETF源文件不存在",
+  ];
+  assert.deepEqual(actionableSystemNotices(warnings), ["ETF源文件不存在"]);
+});
+
+test("system status uses plain user-facing labels", () => {
+  assert.equal(systemStatusLabel({ run_info: { status: "partial_success" }, data_quality: { overall_status: "WARN" } }), "数据已更新");
+  assert.equal(systemStatusLabel({ run_info: { status: "failed" }, data_quality: { overall_status: "ERROR" } }), "需要处理");
+});
+
+test("system navigation hides raw agent audit and exposes technical details on demand", () => {
+  const html = fs.readFileSync(path.join(__dirname, "../../frontend/index.html"), "utf8");
+  const styles = fs.readFileSync(path.join(__dirname, "../../frontend/assets/styles.css"), "utf8");
+  assert.equal(html.includes('<a href="#agents">运行审计</a>'), false);
+  assert.equal(html.includes('href="#data">系统状态</a>'), true);
+  assert.equal(html.includes('id="technical-details"'), true);
+  assert.equal(html.includes("今日更新状态"), true);
+  assert.equal(styles.includes(".system-technical-details:not([open]) > .technical-sections"), true);
 });

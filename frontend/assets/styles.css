@@ -666,6 +666,59 @@ button.button {
   color: var(--ink);
 }
 
+.system-attention-list {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid #d9eadf;
+  border-radius: 10px;
+  background: #f5fbf7;
+}
+
+.system-attention-list strong {
+  color: #1d6b3c;
+  font-size: 14px;
+}
+
+.system-attention-list p,
+.system-attention-list ul {
+  margin: 6px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.system-attention-list.has-warning {
+  border-color: #ecd9b4;
+  background: #fffaf0;
+}
+
+.system-attention-list.has-warning strong {
+  color: #8a5b00;
+}
+
+.system-technical-details {
+  margin-top: 0;
+  padding-top: 18px;
+}
+
+.system-technical-details > summary {
+  padding-bottom: 4px;
+}
+
+.technical-grid,
+.technical-sections {
+  margin-top: 18px;
+}
+
+.system-technical-details:not([open]) > .technical-grid,
+.system-technical-details:not([open]) > .technical-sections {
+  display: none;
+}
+
+.technical-sections .card {
+  box-shadow: none;
+}
+
 .source-box {
   margin-top: 18px;
   padding-top: 18px;

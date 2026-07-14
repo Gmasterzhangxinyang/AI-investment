@@ -156,5 +156,30 @@
       .sort((left, right) => left.horizon - right.horizon || left.strategy_id.localeCompare(right.strategy_id));
   }
 
-  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, auxiliaryStateLabel, historicalComparisonRows };
+  function actionableSystemNotices(warnings) {
+    const hiddenPatterns = [
+      "最新日期",
+      "最新日期一致",
+      "无效交易行过滤数",
+      "数据质检WARN数量",
+      "回测诊断WARN数量",
+    ];
+    const actionablePatterns = ["源文件", "数据接入", "必要字段", "数据不足", "读取失败", "缺失", "不存在", "无法生成"];
+    return (warnings || []).filter((warning) => {
+      const text = String(warning || "");
+      return text
+        && actionablePatterns.some((pattern) => text.includes(pattern))
+        && !hiddenPatterns.some((pattern) => text.includes(pattern));
+    });
+  }
+
+  function systemStatusLabel(data) {
+    const runStatus = String(data?.run_info?.status || "").toLowerCase();
+    const qualityStatus = String(data?.data_quality?.overall_status || "").toUpperCase();
+    const notices = actionableSystemNotices(data?.run_info?.warnings || []);
+    if (["failed", "error"].includes(runStatus) || qualityStatus === "ERROR" || notices.length) return "需要处理";
+    return "数据已更新";
+  }
+
+  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, auxiliaryStateLabel, historicalComparisonRows, actionableSystemNotices, systemStatusLabel };
 });

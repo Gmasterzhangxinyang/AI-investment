@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI 投研工作台</title>
-    <link rel="stylesheet" href="./assets/styles.css?v=20260701-modules-v1" />
+    <link rel="stylesheet" href="./assets/styles.css?v=20260714-system-status" />
   </head>
   <body>
     <div class="app-shell">
@@ -26,10 +26,9 @@
           <a href="#cb">可转债</a>
           <a href="#assets">标的档案</a>
           <span class="nav-label">系统</span>
-          <a href="#data">数据状态</a>
-          <a href="#agents">运行审计</a>
-          <a href="#settings">策略参数</a>
-          <a href="#param-guide">参数说明</a>
+          <a href="#data">系统状态</a>
+          <a href="#settings">策略设置</a>
+          <a href="#param-guide">规则说明</a>
         </nav>
 
         <div class="rail-footer">
@@ -323,7 +322,7 @@
             </article>
             <article class="card">
               <h3>说明</h3>
-              <p class="plain-text">当前页面保留运行摘要和 Agent 审计，用于确认日更流程是否正常；ETF 页面只展示今日信号、持仓路径和全量判断理由。</p>
+              <p class="plain-text">系统运行明细已收纳到“系统状态”的技术详情中；ETF 页面只展示今日信号、持仓路径和全量判断理由。</p>
             </article>
           </div>
         </section>
@@ -377,38 +376,37 @@
             <article class="card span-2">
               <div class="section-head">
                 <div>
-                  <p class="eyebrow">本地数据库</p>
-                  <h2>数据库状态</h2>
-                  <p>Excel 刷新后，系统会把日报、信号、质检和运行审计写入本地 SQLite。</p>
+                  <p class="eyebrow">系统状态</p>
+                  <h2>今日更新状态</h2>
+                  <p>这里只显示是否更新成功、三类数据是否读取完成，以及有没有需要处理的问题。</p>
                 </div>
               </div>
-              <div id="db-status-grid" class="db-status-grid"></div>
+              <div id="system-status-grid" class="db-status-grid"></div>
+              <div id="system-attention-list" class="system-attention-list"></div>
             </article>
-            <article class="card">
-              <h3>数据质检</h3>
-              <div class="table-wrap"><table id="quality-table"></table></div>
-            </article>
-            <article class="card">
-              <h3>源文件 Manifest</h3>
-              <div class="table-wrap"><table id="source-table"></table></div>
-            </article>
-            <article class="card span-2">
-              <h3>组合风控</h3>
-              <div class="table-wrap"><table id="risk-table"></table></div>
-            </article>
-          </div>
-        </section>
-
-        <section id="agents" class="view">
-          <article class="card">
-            <div class="section-head">
-              <div>
-                <p class="eyebrow">运行审计</p>
-                <h2>运行审计</h2>
+            <details id="technical-details" class="card span-2 analysis-disclosure system-technical-details">
+              <summary><span>技术详情</span><small>仅在排查问题时查看</small></summary>
+              <div id="db-status-grid" class="db-status-grid technical-grid"></div>
+              <div class="page-grid technical-sections">
+                <article class="card">
+                  <h3>数据检查明细</h3>
+                  <div class="table-wrap"><table id="quality-table"></table></div>
+                </article>
+                <article class="card">
+                  <h3>源文件记录</h3>
+                  <div class="table-wrap"><table id="source-table"></table></div>
+                </article>
+                <article class="card">
+                  <h3>策略风险明细</h3>
+                  <div class="table-wrap"><table id="risk-table"></table></div>
+                </article>
+                <article class="card">
+                  <h3>运行步骤</h3>
+                  <div class="table-wrap"><table id="agent-table"></table></div>
+                </article>
               </div>
-            </div>
-            <div class="table-wrap"><table id="agent-table"></table></div>
-          </article>
+            </details>
+          </div>
         </section>
 
         <section id="settings" class="view">
@@ -556,7 +554,7 @@
       </main>
     </div>
 
-    <script src="./assets/strategy-config.js?v=20260712-etf-v2"></script>
-    <script src="./assets/app.js?v=20260712-etf-v2"></script>
+    <script src="./assets/strategy-config.js?v=20260714-system-status"></script>
+    <script src="./assets/app.js?v=20260714-system-status"></script>
   </body>
 </html>
