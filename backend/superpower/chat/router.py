@@ -16,6 +16,9 @@ class ChatRouter:
         if self._is_conversation(question):
             return ChatIntent("conversation", 0.99, {})
 
+        if self._asks_etf_strategy_comparison(question, entities):
+            return ChatIntent("etf_strategy_comparison", 0.98, entities)
+
         if (
             any(token in text for token in ["原策略", "2.0", "v2", "趋势回踩"])
             and any(token in text for token in ["哪个", "对比", "相比", "区别", "更好", "差别"])
@@ -88,6 +91,22 @@ class ChatRouter:
             "谢谢",
             "谢谢你",
         }
+
+    def _asks_etf_strategy_comparison(self, question: str, entities: dict[str, str]) -> bool:
+        text = question.lower().replace(" ", "")
+        if "etf" not in text or not (entities.get("code") or entities.get("name")):
+            return False
+        comparison_tokens = [
+            "两个策略",
+            "两套策略",
+            "两个etf策略",
+            "原策略和2.0",
+            "原策略与2.0",
+            "v1和v2",
+            "v1与v2",
+            "分别分析",
+        ]
+        return any(token in text for token in comparison_tokens)
 
     def _etf_ranking_entities(self, question: str) -> dict[str, str] | None:
         text = question.lower().replace(" ", "")

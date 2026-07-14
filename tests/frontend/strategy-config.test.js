@@ -145,6 +145,13 @@ test("chat keeps greetings lightweight and removes the English user label", () =
   assert.equal(source.includes('appendMessage("user", question, "You")'), false);
 });
 
+test("chat removes duplicate completed-step panels and keeps evidence collapsed", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../../frontend/assets/app.js"), "utf8");
+  assert.equal(source.includes("stream.remove();"), true);
+  assert.equal(source.includes("details.open = true"), false);
+  assert.equal(source.includes("双策略对照 · 本地规则计算"), true);
+});
+
 test("strategy state codes render as concise Chinese labels", () => {
   assert.equal(strategyStateLabel("medium_status", "trend_confirmed"), "趋势已确认");
   assert.equal(strategyStateLabel("short_entry_status", "overheated_do_not_chase"), "过热不追");

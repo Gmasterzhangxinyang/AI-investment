@@ -1844,9 +1844,12 @@ async function submitChat(question) {
     liveStream.finish(result);
     await streamAnswer(thinking, result.answer);
     const isConversation = result.intent?.name === "conversation";
+    const isStrategyComparison = result.intent?.name === "etf_strategy_comparison";
     thinking.querySelector(".message-body span").textContent = isConversation
       ? "投研助手"
-      : `Trace ${result.traceId} · ${result.intent?.name || "agent"} · ${result.llmModel || (result.llmUsed ? "llm" : "deterministic")}`;
+      : isStrategyComparison
+        ? "双策略对照 · 本地规则计算"
+        : `Trace ${result.traceId} · ${result.intent?.name || "agent"} · ${result.llmModel || (result.llmUsed ? "llm" : "deterministic")}`;
     if (!isConversation) attachAnalysisDetails(thinking, result, question);
     renderAgentRuntime(result);
     rememberChatTurn(question, result, result.answer);
@@ -1973,48 +1976,7 @@ function createThinkingStream(article, question) {
     },
     finish(result) {
       if (timer) window.clearInterval(timer);
-      if (result.intent?.name === "conversation") {
-        stream.remove();
-        return;
-      }
-      const steps = (result.steps || []).slice(0, 8);
-      stream.classList.remove("is-live");
-      stream.classList.add("is-complete");
-      stream.innerHTML = `
-        <div class="thinking-head">
-          <span class="thinking-check" aria-hidden="true"></span>
-          <span class="thinking-current">分析完成</span>
-          <small>${escapeHtml(result.intent?.name || "agent")} · ${escapeHtml(result.llmModel || "deterministic")}</small>
-        </div>
-        <details class="thinking-details">
-          <summary>查看 ${steps.length || baseSteps.length} 个步骤</summary>
-          <ol>
-          ${
-            steps.length
-              ? steps
-                  .map(
-                    (step) => `
-                      <li class="done">
-                        <strong>${escapeHtml(step.name || "--")}</strong>
-                        <span>${escapeHtml(step.status || "--")} · ${escapeHtml(step.detail || "")}</span>
-                      </li>
-                    `,
-                  )
-                  .join("")
-              : baseSteps
-                  .map(
-                    (step) => `
-                      <li class="done">
-                        <strong>${escapeHtml(step[0])}</strong>
-                        <span>${escapeHtml(step[1])}</span>
-                      </li>
-                    `,
-                  )
-                  .join("")
-          }
-          </ol>
-        </details>
-      `;
+      stream.remove();
       log.scrollTop = log.scrollHeight;
     },
     error(message) {
@@ -2095,12 +2057,11 @@ function attachAnalysisDetails(article, result, question = "") {
     : "通过，答案未改变信号或排名";
 
   const details = document.createElement("details");
-  details.className = `analysis-disclosure${complex ? " is-expanded" : ""}`;
-  if (complex) details.open = true;
+  details.className = "analysis-disclosure";
   details.innerHTML = `
     <summary>
-      <span>${complex ? "分析过程" : "分析依据"}</span>
-      <small>${complex ? "已展开 · 分类 · 证据 · 校验" : "分类 · 证据 · 校验"}</small>
+      <span>查看分析依据</span>
+      <small>分类 · 证据 · 校验</small>
     </summary>
     ${
       complex

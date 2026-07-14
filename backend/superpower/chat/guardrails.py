@@ -125,6 +125,10 @@ class ChatGuardrails:
                 for signal in data.get("signals", []) or []:
                     if str(signal.get("signal_bucket", "")).lower() == "entry" and self._truthy(signal.get("buy_signal")):
                         return True
+            if tool.tool == "get_etf_strategy_comparison":
+                data = tool.data if isinstance(tool.data, dict) else {}
+                if any(self._truthy(item.get("buy_candidate")) for item in data.get("decisions", []) or []):
+                    return True
         return False
 
     def _has_tl_buy_signal(self, tools: list[ToolResult]) -> bool:

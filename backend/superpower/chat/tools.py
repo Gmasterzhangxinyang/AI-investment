@@ -4,8 +4,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from superpower.db import DatabaseRepository
+from superpower.skills.etf_rotation_strategy.config import normalize_etf_config
+from superpower.skills.etf_rotation_strategy.contracts import ETFHistory, ETFPositionState
+from superpower.skills.etf_rotation_strategy.registry import default_registry
 from superpower.skills.convertible_bond_ranking.handler import rank_convertible_bonds
+from superpower.skills.technical_indicators.etf import add_etf_indicators
 from superpower.tools.excel_reader import parse_convertible_bond_excel
 from superpower.tools.frame import records
 
@@ -25,6 +31,8 @@ class ResearchToolbox:
             return []
         if intent.name == "etf_ranking":
             return [self.get_etf_ranking(intent.entities)]
+        if intent.name == "etf_strategy_comparison":
+            return [self.get_rule_contract(), self.get_etf_strategy_comparison(intent.entities)]
         if intent.name in {"database_inventory", "asset_list"}:
             return [self.get_data_map(), self.get_daily_summary(), self.get_database_inventory()]
         if intent.name in {"strategy_params", "strategy_comparison", "strategy_stability", "historical_diagnostics"}:
@@ -395,6 +403,120 @@ class ResearchToolbox:
                 "rows": compact_rows,
                 "supported_metrics": metric_labels,
             },
+        )
+
+    def get_etf_strategy_comparison(self, entities: dict[str, str]) -> ToolResult:
+        code = str(entities.get("code") or "").strip()
+        name = str(entities.get("name") or "").strip()
+        if self.repository is None:
+            return self._etf_comparison_unavailable(code, name, "SQLite Repository 未配置")
+        if not code:
+            asset = self.repository.resolve_asset(name)
+            code = str((asset or {}).get("code") or "")
+            name = str((asset or {}).get("name") or name)
+        if not code:
+            return self._etf_comparison_unavailable(code, name, "没有识别到 ETF 代码")
+
+        rows = self.repository.get_market_history(code, limit=400)
+        if not rows:
+            return self._etf_comparison_unavailable(code, name, "SQLite 没有该 ETF 的日频历史")
+        if not name:
+            name = str(rows[0].get("name") or code)
+        params = normalize_etf_config(self._load_strategy_params())
+        frame = self._etf_strategy_frame(rows, code, name)
+        if frame.empty:
+            return self._etf_comparison_unavailable(code, name, "ETF 日频历史缺少开高低收和成交量")
+
+        frame = add_etf_indicators(
+            frame,
+            "成交量（万股）",
+            params["strategy_profiles"]["trend_pullback_v2"]["medium_trend"],
+        )
+        history = ETFHistory(
+            code=code,
+            name=name,
+            rows=frame,
+            as_of=pd.Timestamp(frame.iloc[-1]["date"]),
+        )
+        dashboard_signal = self._dashboard_etf_signal(code) or {}
+        position = ETFPositionState(is_holding=str(dashboard_signal.get("position_status") or "") == "持仓中")
+        registry = default_registry()
+        decisions = []
+        for strategy_id in ("legacy_v1", "trend_pullback_v2"):
+            strategy = registry.create(strategy_id)
+            decision = strategy.evaluate(history, position, params["strategy_profiles"][strategy_id])
+            fields = dict(decision.compatibility_fields)
+            decisions.append(
+                {
+                    "strategy_id": strategy_id,
+                    "strategy_version": decision.strategy_version,
+                    "display_name": "原策略 v1" if strategy_id == "legacy_v1" else "趋势回踩 2.0",
+                    "medium_status": str(decision.medium_status),
+                    "short_entry_status": str(decision.short_entry_status),
+                    "buy_candidate": bool(decision.buy_candidate),
+                    "watch_candidate": bool(decision.watch_candidate),
+                    "sell_alert": bool(decision.sell_alert),
+                    "score": decision.score,
+                    "medium_reason": decision.medium_reason,
+                    "short_entry_reason": decision.short_entry_reason,
+                    "rule_hits": list(decision.rule_hits),
+                    "missing_conditions": list(decision.missing_conditions),
+                    "risk_notes": list(decision.risk_notes),
+                    "metrics": dict(decision.metrics),
+                    "ma20_slope_state": fields.get("ma20_slope_state"),
+                    "weekly_macd_state": fields.get("weekly_macd_state"),
+                    "daily_macd_state": fields.get("daily_macd_state"),
+                    "ma5_above_ma10": fields.get("ma5_above_ma10"),
+                    "ma5_crossed_ma10_today": fields.get("ma5_crossed_ma10_today"),
+                }
+            )
+        return ToolResult(
+            tool="get_etf_strategy_comparison",
+            title="ETF 双策略对照",
+            source="sqlite.market_daily_indicators + configs.strategy_params + ETF strategy plugins",
+            summary=f"{name}（{code}）使用同一份 {len(frame)} 日历史分别运行原策略 v1 和趋势回踩 2.0。",
+            data={
+                "available": True,
+                "name": name,
+                "code": code,
+                "as_of": str(pd.Timestamp(frame.iloc[-1]["date"]).date()),
+                "history_rows": len(frame),
+                "position_status": "持仓中" if position.is_holding else "未持仓/已平仓",
+                "decisions": decisions,
+            },
+        )
+
+    def _etf_strategy_frame(self, rows: list[dict[str, Any]], code: str, name: str) -> pd.DataFrame:
+        normalized = []
+        for row in reversed(rows):
+            payload = row.get("payload_json") if isinstance(row.get("payload_json"), dict) else {}
+            normalized.append(
+                {
+                    "date": row.get("trade_date"),
+                    "code": code,
+                    "name": row.get("name") or name,
+                    "开盘价": row.get("open"),
+                    "最高价": row.get("high"),
+                    "最低价": row.get("low"),
+                    "收盘价": row.get("close"),
+                    "成交量（万股）": row.get("volume"),
+                    "份额变化（亿份）": payload.get("fund_share_change"),
+                }
+            )
+        frame = pd.DataFrame(normalized)
+        if frame.empty:
+            return frame
+        frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+        required = ["date", "开盘价", "最高价", "最低价", "收盘价", "成交量（万股）"]
+        return frame.dropna(subset=required).drop_duplicates("date", keep="last").sort_values("date").reset_index(drop=True)
+
+    def _etf_comparison_unavailable(self, code: str, name: str, reason: str) -> ToolResult:
+        return ToolResult(
+            tool="get_etf_strategy_comparison",
+            title="ETF 双策略对照",
+            source="sqlite.market_daily_indicators + ETF strategy plugins",
+            summary=f"无法完成 {name or code or '该ETF'} 的双策略对照：{reason}。",
+            data={"available": False, "name": name, "code": code, "reason": reason, "decisions": []},
         )
 
     def get_etf_single_asset(self, code: str) -> ToolResult:

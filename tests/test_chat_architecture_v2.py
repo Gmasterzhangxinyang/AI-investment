@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import asdict
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,6 +77,57 @@ def test_ambiguous_etf_ranking_asks_for_a_metric() -> None:
     answer = ChatOrchestrator(ROOT)._deterministic_evidence_answer("查下最高的ETF", pack)
     assert "还缺少比较指标" in answer
     assert "强弱分" in answer and "收盘价" in answer
+
+
+def test_named_etf_two_strategy_question_runs_both_plugins(tmp_path: Path) -> None:
+    class HistoryRepository:
+        root_dir = tmp_path
+
+        def resolve_asset(self, query: str):
+            return {"name": "测试ETF", "code": "111111.SH", "asset_type": "ETF"}
+
+        def get_market_history(self, code: str, limit: int = 400):
+            rows = []
+            start = date(2025, 1, 1)
+            for index in range(220):
+                close = 1.0 + index * 0.002
+                rows.append(
+                    {
+                        "trade_date": str(start + timedelta(days=index)),
+                        "code": code,
+                        "name": "测试ETF",
+                        "open": close - 0.002,
+                        "high": close + 0.005,
+                        "low": close - 0.005,
+                        "close": close,
+                        "volume": 1000 + index,
+                        "payload_json": {"fund_share_change": 0.0},
+                    }
+                )
+            return list(reversed(rows))
+
+    (tmp_path / "configs").mkdir()
+    (tmp_path / "configs" / "strategy_params.json").write_text("{}", encoding="utf-8")
+    dashboard = {"etf": {"all_signals": [{"name": "测试ETF", "code": "111111.SH", "position_status": "未持仓/已平仓"}]}}
+    router = ChatRouter()
+    intent = router.route("为什么测试ETF不好，根据两个策略分析", dashboard)
+    assert intent.name == "etf_strategy_comparison"
+
+    tools = ResearchToolbox(dashboard, HistoryRepository()).collect(intent)
+    comparison = next(item for item in tools if item.tool == "get_etf_strategy_comparison")
+    assert comparison.data["available"] is True
+    assert {item["strategy_id"] for item in comparison.data["decisions"]} == {"legacy_v1", "trend_pullback_v2"}
+
+    pack = EvidencePack(report_date="2026-07-10", intent=intent, rulebook=[], tools=tools)
+    answer = ChatOrchestrator(ROOT)._deterministic_evidence_answer("为什么测试ETF不好，根据两个策略分析", pack)
+    assert "原策略 v1" in answer
+    assert "趋势回踩 2.0" in answer
+    assert "不是说测试ETF本身" in answer
+    assert ChatOrchestrator(ROOT)._should_use_llm(
+        ChatRequest("为什么测试ETF不好，根据两个策略分析", allow_llm=True),
+        answer,
+        "etf_strategy_comparison",
+    ) is False
 
 
 def test_rule_contract_follows_active_etf_strategy(tmp_path: Path) -> None:

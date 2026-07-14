@@ -91,7 +91,7 @@ class ChatOrchestrator:
         )
 
         deterministic_answer = self._deterministic_evidence_answer(request.question, evidence_pack)
-        if self._should_use_llm(request, deterministic_answer):
+        if self._should_use_llm(request, deterministic_answer, intent.name):
             prompt = self._build_prompt(request.question, evidence_pack)
             model_config = self._load_model_config()
             llm = generate_text(prompt, model_config, timeout_seconds=75, developer_text=self._developer_prompt())
@@ -148,8 +148,10 @@ class ChatOrchestrator:
                 return params if isinstance(params, dict) else {}
         return {}
 
-    def _should_use_llm(self, request: ChatRequest, deterministic_answer: str) -> bool:
+    def _should_use_llm(self, request: ChatRequest, deterministic_answer: str, intent_name: str = "") -> bool:
         """Use the model only for questions that benefit from synthesis and only with user permission."""
+        if intent_name in {"conversation", "etf_ranking", "etf_strategy_comparison"}:
+            return False
         if not request.allow_llm:
             return False
         if not self._is_complex_question(request.question):
@@ -352,6 +354,10 @@ class ChatOrchestrator:
         if etf_ranking_answer:
             return etf_ranking_answer
 
+        etf_strategy_comparison = self._etf_strategy_comparison_answer(pack)
+        if etf_strategy_comparison:
+            return etf_strategy_comparison
+
         rule_contract = tools.get("get_rule_contract")
         params = {}
         if rule_contract and isinstance(rule_contract.data, dict):
@@ -487,6 +493,89 @@ class ChatOrchestrator:
         else:
             lines.append("强弱分用于横向排序，不等同于建仓信号；是否入场仍以策略触发状态为准。")
         return "\n\n".join(lines)
+
+    def _etf_strategy_comparison_answer(self, pack: EvidencePack) -> str:
+        if pack.intent.name != "etf_strategy_comparison":
+            return ""
+        tool = next((item for item in pack.tools if item.tool == "get_etf_strategy_comparison"), None)
+        data = tool.data if tool and isinstance(tool.data, dict) else {}
+        if not data.get("available"):
+            return f"暂时不能完成双策略对照：{data.get('reason') or '缺少该ETF的完整日频历史'}。"
+        decisions = {str(item.get("strategy_id")): item for item in data.get("decisions") or []}
+        legacy = decisions.get("legacy_v1") or {}
+        v2 = decisions.get("trend_pullback_v2") or {}
+        name = str(data.get("name") or "该ETF")
+        code = str(data.get("code") or "--")
+
+        legacy_state = "触发建仓候选" if legacy.get("buy_candidate") else "进入关注" if legacy.get("watch_candidate") else "未触发"
+        v2_medium = self._etf_medium_status_label(v2.get("medium_status"))
+        v2_short = self._etf_short_status_label(v2.get("short_entry_status"))
+        both_support_entry = bool(legacy.get("buy_candidate") and v2.get("buy_candidate"))
+        conclusion = (
+            "两套策略都支持当前入场"
+            if both_support_entry
+            else "两套策略目前都不支持入场"
+            if not legacy.get("buy_candidate") and not v2.get("buy_candidate")
+            else "两套策略结论不一致，需要按所选策略执行"
+        )
+        legacy_reason = self._humanize_legacy_reason(str(legacy.get("short_entry_reason") or "未返回具体原因"))
+        v2_hits = self._etf_v2_hit_labels(v2.get("rule_hits") or [])
+        v2_reason = "、".join(v2_hits) if v2_hits else str(v2.get("medium_reason") or v2.get("short_entry_reason") or "未返回具体原因")
+        metrics = legacy.get("metrics") if isinstance(legacy.get("metrics"), dict) else {}
+        close = self._fmt_metric(metrics.get("close"))
+        ma5 = self._fmt_metric(metrics.get("ma5"))
+        ma10 = self._fmt_metric(metrics.get("ma10"))
+        ma20 = self._fmt_metric(metrics.get("ma20"))
+        volume = self._fmt_metric(metrics.get("vol_ratio60", metrics.get("volume_ratio_60")))
+        macd = self._fmt_metric(metrics.get("macd_hist"))
+        return (
+            f"结论：不是说{name}本身‘不好’，而是截至 {data.get('as_of') or pack.report_date}，{conclusion}。\n\n"
+            f"原策略 v1：{legacy_state}。主要缺口是{legacy_reason}。MACD柱和量能即使有所改善，也不能替代均线条件。\n\n"
+            f"趋势回踩 2.0：中期为“{v2_medium}”，短期为“{v2_short}”。当前关键限制是{v2_reason}，所以还没有进入突破确认或回踩确认阶段。\n\n"
+            f"当前数据：收盘 {close}，MA5 {ma5}，MA10 {ma10}，MA20 {ma20}，MACD柱 {macd}，量能倍数 {volume}。\n\n"
+            "怎么观察：先看 MA20 是否走平、周MACD是否停止走弱，再看 MA5 上穿 MA10 和价格站回 MA20。"
+            "原策略侧重当日触发，2.0先检查中期趋势，因此2.0会更保守。"
+        )
+
+    def _etf_medium_status_label(self, value: Any) -> str:
+        return {
+            "not_applicable": "不适用",
+            "do_not_participate": "不参与",
+            "trend_not_confirmed": "趋势未确认",
+            "trend_confirmed": "趋势已确认",
+            "data_unavailable": "数据不足",
+        }.get(str(value or ""), str(value or "--"))
+
+    def _etf_short_status_label(self, value: Any) -> str:
+        return {
+            "no_entry": "无入场",
+            "close_watch": "密切观察",
+            "overheated_do_not_chase": "过热不追",
+            "waiting_confirmation": "等待确认",
+            "waiting_pullback": "等待回踩",
+            "can_enter": "可考虑入场",
+            "data_unavailable": "数据不足",
+        }.get(str(value or ""), str(value or "--"))
+
+    def _etf_v2_hit_labels(self, values: list[Any]) -> list[str]:
+        labels = {
+            "ma20_slope_down": "MA20仍向下",
+            "weekly_macd_green_widening": "周MACD绿柱扩大",
+            "weekly_macd_red_weakening": "周MACD红柱缩短",
+        }
+        return [labels.get(str(value), str(value)) for value in values]
+
+    def _humanize_legacy_reason(self, value: str) -> str:
+        checks = []
+        if "MA5今日未上穿MA10" in value:
+            checks.append("MA5尚未上穿MA10")
+        if "MA5未高于MA10" in value:
+            checks.append("MA5仍低于MA10")
+        if "收盘价未高于MA20" in value:
+            checks.append("收盘尚未站上MA20")
+        if checks:
+            return "、".join(dict.fromkeys(checks))
+        return value.replace("未触发建仓候选：", "").replace("规则A缺", "").replace("规则B缺", "")
 
     def _strategy_diagnosis_answer(self, pack: EvidencePack, rule_contract: Any) -> str:
         if pack.intent.name not in {"strategy_comparison", "strategy_stability", "historical_diagnostics"}:
@@ -1137,6 +1226,7 @@ class ChatOrchestrator:
             "agent_audit",
             "strategy_params",
             "strategy_comparison",
+            "etf_strategy_comparison",
             "strategy_stability",
             "historical_diagnostics",
         }:
