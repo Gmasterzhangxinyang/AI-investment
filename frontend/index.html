@@ -3,16 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI 投研工作台</title>
-    <link rel="stylesheet" href="./assets/styles.css?v=20260714-parameter-guide" />
+    <title>Research Desk · 投研决策工作台</title>
+    <link rel="stylesheet" href="./assets/styles.css?v=20260714-enterprise-ui" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="rail">
-        <a class="brand" href="#chat" aria-label="AI 投研工作台">
+        <a class="brand" href="#chat" aria-label="投研决策工作台">
+          <span class="brand-mark" aria-hidden="true">RD</span>
           <span class="brand-copy">
-            <strong>AI 投研</strong>
-            <small>Pro</small>
+            <strong>Research Desk</strong>
+            <small>投研决策工作台</small>
           </span>
         </a>
 
@@ -40,7 +41,7 @@
       <main class="main-shell">
         <header class="app-header">
           <div>
-            <p class="eyebrow">Wind 数据 · 规则信号 · 风险复核</p>
+            <p class="eyebrow">本地数据 · 确定性策略 · 风险约束</p>
             <h1 id="page-title">投研问答</h1>
           </div>
           <div class="header-actions">
@@ -64,17 +65,17 @@
 
         <section id="chat" class="view active">
           <div class="chat-layout">
-            <section class="chat-pane" aria-label="AI chat">
+            <section class="chat-pane" aria-label="Research assistant">
               <div class="command-panel">
                 <div class="chat-head">
                   <div class="chat-brand-row">
-                    <span>专业投研助理</span>
-                    <span>本地数据 · 规则证据 · 风险约束</span>
+                    <span>Research Copilot</span>
+                    <span>规则优先 · 证据可追溯</span>
                   </div>
                   <div>
-                    <p class="eyebrow">投研问答</p>
-                    <h2>今天想研究什么？</h2>
-                    <p>可以问单只 ETF、TL、可转债、数据质量、参数和整体风险。AI 会先查本地证据，再按投研框架解释，不改写交易信号。</p>
+                    <p class="eyebrow">研究查询</p>
+                    <h2>开始一项研究</h2>
+                    <p>查询单只 ETF、TL、可转债、数据质量、策略参数或整体风险。系统先读取本地证据，再按投研规则组织结论。</p>
                   </div>
                 </div>
 
@@ -113,7 +114,7 @@
             <aside class="context-pane" aria-label="Data context">
               <div class="panel-head">
                 <p class="eyebrow">上下文</p>
-                <h3>AI 可用数据</h3>
+                <h3>可用研究数据</h3>
               </div>
               <div id="context-grid" class="context-grid"></div>
               <div class="source-box">
@@ -143,8 +144,8 @@
         <section id="report" class="view">
           <div class="memo-shell">
             <div class="memo-cover">
-              <p class="eyebrow">每日报告</p>
-              <h2>今日投研值班台</h2>
+              <p class="eyebrow">Daily Research</p>
+              <h2>每日研究摘要</h2>
               <span id="report-date" class="date-chip">--</span>
             </div>
             <article class="memo-section">
