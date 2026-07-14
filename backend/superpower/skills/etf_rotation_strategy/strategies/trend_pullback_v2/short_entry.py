@@ -197,7 +197,7 @@ def evaluate_short_entry_history(
         elif breakout_confirmed(row, active_setup, profile):
             result = _result(
                 ShortEntryStatus.CAN_ENTER,
-                "突破设置日高点，日MACD为红柱且未进入过热区",
+                "突破趋势确认日高点，日MACD为红柱，价格高于MA5不超过3%",
                 active_setup,
                 session_number,
                 cooldown_until,
@@ -240,7 +240,7 @@ def evaluate_short_entry_history(
                     else ShortEntryStatus.WAITING_PULLBACK
                 )
                 reason = (
-                    "处于设置后的确认窗口，等待后续突破设置日高点"
+                    "处于趋势确认后的观察窗口，等待后续突破趋势确认日高点"
                     if status is ShortEntryStatus.WAITING_CONFIRMATION
                     else "突破确认窗口已结束，等待缩量回踩承接"
                 )

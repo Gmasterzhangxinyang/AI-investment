@@ -80,7 +80,7 @@ PARAMETER_SCHEMA = {
         },
         "overheat_ma5_distance_min": {
             "type": "number",
-            "label": "偏离MA5比例",
+            "label": "高于MA5的最大允许幅度",
             "min": 0.005,
             "max": 0.20,
             "step": 0.005,

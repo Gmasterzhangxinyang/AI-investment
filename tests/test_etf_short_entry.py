@@ -137,6 +137,7 @@ def test_later_breakout_confirmation_can_enter() -> None:
 
     assert result.status is ShortEntryStatus.CAN_ENTER
     assert result.entry_route == "breakout_confirmation"
+    assert "趋势确认日高点" in result.reason
 
 
 def test_confirmed_giant_volume_bar_is_overheated_do_not_chase() -> None:
