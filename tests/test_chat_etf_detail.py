@@ -75,6 +75,15 @@ def test_guardrail_still_blocks_entry_advice_without_signal() -> None:
     assert "ETF 建仓/买入表述缺少确定性 entry 信号依据。" in result.issues
 
 
+def test_guardrail_allows_waiting_for_entry_conditions() -> None:
+    text = "可以继续观察，等待建仓条件确认。"
+
+    result = ChatGuardrails().validate_output(text, ChatIntent("etf_detail", 0.93, {}), [])
+
+    assert result.passed
+    assert result.text == text
+
+
 def test_single_etf_answer_uses_rule_evidence_from_dashboard_signal() -> None:
     pack = EvidencePack(
         report_date="2026-06-26",

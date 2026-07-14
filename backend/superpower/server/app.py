@@ -383,6 +383,7 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
             session_id = str(payload.get("sessionId", "default")).strip() or "default"
             user_id = str(payload.get("userId", "local-user")).strip() or "local-user"
             short_term_memory = payload.get("shortTermMemory") if isinstance(payload.get("shortTermMemory"), dict) else {}
+            allow_llm = bool(payload.get("allowLlm", False))
         except Exception:
             self._send_json({"status": "failed", "message": "Invalid JSON body."}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -399,6 +400,7 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
                     session_id=session_id,
                     user_id=user_id,
                     short_term_memory=short_term_memory,
+                    allow_llm=allow_llm,
                 )
             )
         except FileNotFoundError as exc:

@@ -1697,7 +1697,7 @@ async function submitChat(question) {
   state.isChatting = true;
   let timeoutId = null;
   appendMessage("user", question, "You");
-  const thinking = appendMessage("assistant", "正在读取最新投研上下文并生成回答。", "AI");
+  const thinking = appendMessage("assistant", "正在由后端规则引擎读取最新投研证据。", "AI");
   const liveStream = createThinkingStream(thinking, question);
   liveStream.start();
   renderAgentRuntime({
@@ -1710,28 +1710,6 @@ async function submitChat(question) {
   });
 
   try {
-    if (!state.aiChatEnabled) {
-      const localResult = localDeterministicChat(question);
-      if (localResult) {
-        liveStream.finish(localResult);
-        await streamAnswer(thinking, localResult.answer);
-        thinking.querySelector(".message-body span").textContent = `Trace ${localResult.traceId} · ${localResult.intent.name} · ${localResult.llmModel}`;
-        attachAnalysisDetails(thinking, localResult, question);
-        renderAgentRuntime(localResult);
-        rememberChatTurn(question, localResult, localResult.answer);
-        return;
-      }
-
-      const ruleResult = localChatResult(localAnswer(question), "rule_based_chat", "ai_chat_not_enabled", "Local rule answer", "frontend.dashboard.summary");
-      liveStream.finish(ruleResult);
-      await streamAnswer(thinking, ruleResult.answer);
-      thinking.querySelector(".message-body span").textContent = "规则问答模式 · 未启用 AI 智能问答";
-      attachAnalysisDetails(thinking, ruleResult, question);
-      renderAgentRuntime(ruleResult);
-      rememberChatTurn(question, ruleResult, ruleResult.answer);
-      return;
-    }
-
     if (window.location.protocol === "file:") {
       const answer = [
         "现在这个页面是直接用 file:// 打开的，所以不能调用后端的 /api/chat，也就不会真正进入 AI 模型。",
@@ -1760,6 +1738,7 @@ async function submitChat(question) {
         sessionId: "local-dashboard",
         userId: "local-user",
         shortTermMemory: state.chatMemory || {},
+        allowLlm: state.aiChatEnabled,
       }),
       signal: controller.signal,
     });

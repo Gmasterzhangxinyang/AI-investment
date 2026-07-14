@@ -53,6 +53,12 @@ class ChatGuardrails:
         return GuardrailResult(not issues, issues, cleaned)
 
     def _contains_positive_entry_claim(self, text: str) -> bool:
+        explicit_advice_patterns = [
+            r"(建议|直接|立即|马上|应当|应该).{0,10}(买入|建仓|入场)",
+            r"(买入|建仓|入场).{0,10}(建议执行|可以执行|立即执行)",
+        ]
+        if any(re.search(pattern, text, flags=re.I) for pattern in explicit_advice_patterns):
+            return True
         negative_patterns = [
             r"(没有|无|未|不|不能|不得|不可|尚未|并非).{0,10}(买入|建仓|入场|entry)",
             r"(买入|建仓|入场|entry).{0,10}(没有|无|未|不|不能|不得|不可|尚未|并非)",
@@ -60,6 +66,12 @@ class ChatGuardrails:
             r"(0|零|无|没有).{0,8}(买入|建仓).{0,8}(候选|信号|建议)",
         ]
         if any(re.search(pattern, text, flags=re.I) for pattern in negative_patterns):
+            return False
+        cautious_patterns = [
+            r"(观察|等待).{0,16}(买入|建仓|入场).{0,8}(条件|确认)",
+            r"(买入|建仓|入场).{0,8}(条件|确认).{0,16}(等待|未满足|未确认)",
+        ]
+        if any(re.search(pattern, text, flags=re.I) for pattern in cautious_patterns):
             return False
         positive_patterns = [
             r"(建议|可以|可考虑|适合|触发|满足|给出).{0,12}(买入|建仓|入场)",

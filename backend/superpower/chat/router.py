@@ -13,6 +13,18 @@ class ChatRouter:
         text = question.lower()
         entities = self._extract_entities(question, dashboard)
 
+        if (
+            any(token in text for token in ["原策略", "2.0", "v2", "趋势回踩"])
+            and any(token in text for token in ["哪个", "对比", "相比", "区别", "更好", "差别"])
+        ):
+            return ChatIntent("strategy_comparison", 0.96, entities)
+        if any(token in text for token in ["历史诊断", "历史判断", "历史表现", "回测", "胜率", "正收益比例", "最大回撤", "假反转"]):
+            return ChatIntent("historical_diagnostics", 0.95, entities)
+        if any(token in text for token in ["策略稳定", "策略可靠吗", "策略可靠", "策略效果", "策略好不好", "这些策略稳定"]):
+            return ChatIntent("strategy_stability", 0.94, entities)
+        if "策略" in text and any(token in text for token in ["现在使用", "当前使用", "启用哪个", "默认策略"]):
+            return ChatIntent("strategy_params", 0.95, entities)
+
         if (entities.get("code") or entities.get("name")) and "etf" in text:
             if any(token in text for token in ["状态", "怎么样", "如何", "哪里", "问题", "量能", "趋势", "原因", "为什么", "触发", "分析", "解释"]):
                 return ChatIntent("etf_detail", 0.94, entities)

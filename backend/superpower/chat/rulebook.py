@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
+
+from .strategy_knowledge import build_rule_contract
+
 
 RULEBOOK = [
     "系统的 ETF、TL、可转债信号均由确定性代码生成；LLM 只允许解释、归纳、复核和提示风险，不得新增或改写交易信号。",
@@ -24,14 +28,17 @@ RULEBOOK = [
 ]
 
 
-def rules_for_intent(intent_name: str) -> list[str]:
+def rules_for_intent(intent_name: str, strategy_params: dict[str, Any] | None = None) -> list[str]:
+    contract = build_rule_contract(strategy_params)
     common = [RULEBOOK[0], RULEBOOK[17], RULEBOOK[18]]
     if intent_name.startswith("etf"):
-        return common + RULEBOOK[1:9]
+        return common + contract["etf_rules"]
     if intent_name.startswith("tl"):
-        return common + RULEBOOK[9:15]
+        return common + contract["tl_rules"]
     if intent_name.startswith("convertible"):
-        return common + RULEBOOK[15:17]
+        return common + contract["convertible_bond_rules"]
+    if intent_name in {"strategy_params", "strategy_comparison", "strategy_stability", "historical_diagnostics"}:
+        return common + contract["etf_rules"] + contract["tl_rules"] + contract["convertible_bond_rules"]
     if intent_name in {"asset_list", "database_inventory"}:
         return common + [
             "数据库盘点问题必须优先使用 SQLite asset_master 和表行数；不得只列关注池。",

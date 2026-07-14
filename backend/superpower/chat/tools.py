@@ -10,6 +10,7 @@ from superpower.tools.excel_reader import parse_convertible_bond_excel
 from superpower.tools.frame import records
 
 from .schemas import ChatIntent, ToolResult
+from .strategy_knowledge import build_rule_contract
 
 
 class ResearchToolbox:
@@ -20,19 +21,37 @@ class ResearchToolbox:
         self.repository = repository
 
     def collect(self, intent: ChatIntent) -> list[ToolResult]:
-        tools: list[ToolResult] = [
-            self.get_daily_summary(),
-            self.get_rule_contract(),
-            self.get_data_map(),
-            self.get_research_snapshot(),
-        ]
         if intent.name in {"database_inventory", "asset_list"}:
-            tools.append(self.get_database_inventory())
+            return [self.get_data_map(), self.get_daily_summary(), self.get_database_inventory()]
+        if intent.name in {"strategy_params", "strategy_comparison", "strategy_stability", "historical_diagnostics"}:
+            tools = [self.get_rule_contract()]
+            if intent.name != "strategy_params":
+                tools.append(self.get_strategy_diagnostics())
             return tools
-        if intent.name in {"etf_entry", "etf_exit", "etf_detail", "daily_report", "risk_review"}:
+        if intent.name in {"etf_entry", "etf_exit", "etf_detail"}:
+            tools = [
+                self.get_rule_contract(),
+                self.get_etf_signals(intent.entities),
+                self.get_etf_watchlist(intent.entities),
+            ]
+            if intent.name == "etf_detail" and intent.entities.get("code"):
+                tools.append(self.get_etf_single_asset(intent.entities["code"]))
+            return tools
+        if intent.name == "tl_timing":
+            return [self.get_rule_contract(), self.get_tl_state()]
+        if intent.name == "convertible_bond":
+            tools = [self.get_rule_contract(), self.get_convertible_top10()]
+            if intent.entities.get("code"):
+                tools.append(self.get_convertible_detail(intent.entities["code"]))
+            return tools
+        if intent.name == "data_quality":
+            return [self.get_data_map(), self.get_data_quality()]
+        if intent.name == "agent_audit":
+            return [self.get_data_map(), self.get_agent_audit()]
+
+        tools: list[ToolResult] = [self.get_daily_summary(), self.get_rule_contract(), self.get_data_map(), self.get_research_snapshot()]
+        if intent.name in {"daily_report", "risk_review"}:
             tools.extend([self.get_etf_signals(intent.entities), self.get_etf_watchlist(intent.entities)])
-        if intent.name == "etf_detail" and intent.entities.get("code"):
-            tools.append(self.get_etf_single_asset(intent.entities["code"]))
         if intent.name in {"tl_timing", "daily_report", "risk_review"}:
             tools.append(self.get_tl_state())
         if intent.name in {"convertible_bond", "daily_report"}:
@@ -41,7 +60,7 @@ class ResearchToolbox:
             tools.append(self.get_convertible_detail(intent.entities["code"]))
         if intent.name in {"data_quality", "daily_report", "risk_review"}:
             tools.append(self.get_data_quality())
-        if intent.name in {"agent_audit", "daily_report"}:
+        if intent.name == "agent_audit":
             tools.append(self.get_agent_audit())
         if intent.name == "risk_review":
             tools.append(self.get_risk_summary())
@@ -175,47 +194,64 @@ class ResearchToolbox:
 
     def get_rule_contract(self) -> ToolResult:
         params = self._load_strategy_params()
+        contract = build_rule_contract(params)
+        active_etf = contract["etf_strategy"]["active_strategy"]
         return ToolResult(
             tool="get_rule_contract",
             title="Rule contract",
             source="configs.strategy_params + deterministic strategy handlers",
             summary=(
-                "交易信号由确定性规则生成；LLM 只能解释证据。"
+                f"交易信号由确定性规则生成；当前ETF策略 {active_etf}，LLM 只能解释证据。"
                 f" ETF买入量能阈值 {params.get('etf', {}).get('buy_volume_ratio_min', '--')}，"
                 f"TL周线J阈值 {params.get('tl', {}).get('weekly_j_low_threshold', '--')}，"
                 f"TL日线J阈值 {params.get('tl', {}).get('daily_j_low_threshold', '--')}。"
             ),
+            data=contract,
+        )
+
+    def get_strategy_diagnostics(self) -> ToolResult:
+        etf = self.dashboard.get("etf") or {}
+        diagnostics = etf.get("historical_diagnostics") or []
+        compact = [
+            {
+                key: row.get(key)
+                for key in (
+                    "strategy_id",
+                    "strategy_version",
+                    "state_type",
+                    "entry_route",
+                    "horizon",
+                    "event_count",
+                    "complete_horizon_count",
+                    "sample_count",
+                    "positive_return_rate",
+                    "positive_rate",
+                    "mean_return",
+                    "average_return",
+                    "mean_maximum_adverse_excursion",
+                    "average_max_adverse_excursion",
+                    "false_reversal_10d_count",
+                    "false_reversal_10d_rate",
+                    "false_reversal_count",
+                    "false_reversal_rate",
+                    "state_flip_frequency",
+                    "diagnostic_note",
+                )
+                if key in row
+            }
+            for row in diagnostics[:60]
+        ]
+        return ToolResult(
+            tool="get_strategy_diagnostics",
+            title="ETF historical diagnostics",
+            source="dashboard.etf.historical_diagnostics",
+            summary=f"ETF历史诊断共 {len(diagnostics)} 条汇总；它用于回看信号后表现，不等同于完整组合回测。",
             data={
-                "policy": {
-                    "signal_owner": "deterministic_code_only",
-                    "llm_permission": "explain_only",
-                    "llm_forbidden": [
-                        "新增交易信号",
-                        "把关注池说成建仓候选",
-                        "把未满足KDJ低位条件说成满足",
-                        "承诺收益或保证赚钱",
-                    ],
-                },
-                "strategy_params": params,
-                "etf_rules": [
-                    "建仓A：未持仓 + MA5今日上穿MA10 + MACD柱较昨日改善 + vol_ratio60达到买入阈值。",
-                    "建仓B：未持仓 + DIF今日上穿DEA + MA5高于MA10 + 收盘价高于MA20 + vol_ratio60达到买入阈值。",
-                    "MA5高于MA20是增强项，不是替代MA5上穿MA10的硬条件。",
-                    "关注池不是建仓候选；量能未确认时只能写关注或等待确认。",
-                    "平仓只对持仓生效：收盘跌破MA10且放量，或收盘跌破MA5且明显放量。",
-                ],
-                "tl_rules": [
-                    "TL仅输出不做交易、关注交易、模型触发建仓候选；不做平仓提示。",
-                    "不做交易：周线红柱缩短、绿柱变长，或红转绿阶段。",
-                    "关注交易：周线红柱变长、绿柱缩短，或绿转红阶段；日线MACD改善只能作为辅助关注。",
-                    "模型触发建仓候选：周线关注且近2周J<20后回升，或日线关注且近3日J<5后回升；若周线不做交易硬否决，则不能建仓。",
-                ],
-                "convertible_bond_rules": [
-                    "先做风控排除，再做综合打分；100元以下、140元及以上、已发强赎公告、正股ST、A/A-及以下评级、高YTM异常等默认不进入正常排序；A+保留为中风险观察。",
-                    "负YTM、高转股溢价率、极端业绩增速、利润基数异常必须按配置扣分或硬排除；默认50%以上转股溢价率和-5%以下YTM不进入普通Top10，不能只按单一高增长指标解释为优质。",
-                    "强赎状态必须区分：未触发、触发但有不强赎公告、触发且未见有效公告、已发强赎公告。",
-                    "综合打分字段包括截尾后的基本面增长、转股溢价率质量、到期收益率质量、剩余期限、信用评级、强赎状态、存续规模、未转股比例和行业分散。",
-                    "AI只能解释代码给出的rank、score、risk_flags和rank_reason，不得新增候选或按主观理解改排名。",
+                "rows": compact,
+                "boundary": [
+                    "这是信号事件诊断，不包含完整仓位、资金占用、交易成本和组合净值。",
+                    "样本之间可能重叠，不能把正收益比例直接当成实盘胜率。",
+                    "没有足够样本时只能说证据不足，不能判定某策略稳定或更优。",
                 ],
             },
         )
@@ -282,8 +318,14 @@ class ResearchToolbox:
 
     def get_etf_signals(self, entities: dict[str, str]) -> ToolResult:
         data = {
-            "buy_candidates": self._filter_rows(self.dashboard.get("etfBuyCandidates", []), entities),
-            "sell_alerts": self._filter_rows(self.dashboard.get("etfSellAlerts", []), entities),
+            "buy_candidates": [
+                self._compact_etf_row(row)
+                for row in self._filter_rows(self.dashboard.get("etfBuyCandidates", []), entities)[:12]
+            ],
+            "sell_alerts": [
+                self._compact_etf_row(row)
+                for row in self._filter_rows(self.dashboard.get("etfSellAlerts", []), entities)[:12]
+            ],
         }
         return ToolResult(
             tool="get_etf_signals",
@@ -301,7 +343,10 @@ class ResearchToolbox:
             title="ETF watchlist",
             source="dashboard.etfWatchlist + dashboard.etfDetailHistory",
             summary=f"ETF 关注池 {len(rows)} 条，匹配历史 {len(history)} 条。",
-            data={"watchlist": rows[:20], "history": history[-30:]},
+            data={
+                "watchlist": [self._compact_etf_row(row) for row in rows[:12]],
+                "history": [self._compact_etf_row(row) for row in history[-12:]],
+            },
         )
 
     def get_etf_single_asset(self, code: str) -> ToolResult:
@@ -326,12 +371,19 @@ class ResearchToolbox:
                 f"收盘 {latest_bar.get('close')}，MA5 {latest_bar.get('ma5')}，MA10 {latest_bar.get('ma10')}，"
                 f"量能倍数 {latest_bar.get('vol_ratio60')}，MACD柱 {latest_bar.get('macd_hist')}。"
             )
+        compact_asset = {key: asset.get(key) for key in ("code", "name", "asset_type") if asset and key in asset}
         return ToolResult(
             tool="get_etf_single_asset",
             title="ETF single asset",
             source="dashboard.etf.all_signals + sqlite.asset_master + sqlite.market_daily_indicators + sqlite.etf_daily_signals",
             summary=summary,
-            data={"asset": asset, "dashboard_signal": dashboard_signal, "latest_bar": latest_bar, "signals": signals, "history": history},
+            data={
+                "asset": compact_asset,
+                "dashboard_signal": self._compact_etf_row(dashboard_signal or {}),
+                "latest_bar": self._compact_market_row(latest_bar or {}),
+                "signals": [self._compact_etf_row(row) for row in signals[:8]],
+                "history": [self._compact_market_row(row) for row in history[:30]],
+            },
         )
 
     def get_tl_state(self) -> ToolResult:
@@ -346,7 +398,11 @@ class ResearchToolbox:
             title="TL timing",
             source="dashboard.tlToday + dashboard.tlRecent + sqlite.market_daily_indicators",
             summary=f"TL 当前状态 {state}。",
-            data={"today": rows[:2], "recent": recent[:12], "history": history},
+            data={
+                "today": [self._compact_tl_row(row) for row in rows[:1]],
+                "recent": [self._compact_tl_row(row) for row in recent[:8]],
+                "history": [self._compact_market_row(row) for row in history[:8]],
+            },
         )
 
     def get_convertible_top10(self) -> ToolResult:
@@ -373,12 +429,12 @@ class ResearchToolbox:
                 "ranked_candidates": candidates if candidates is not None else len(ranked),
                 "top10_count": top10_count if top10_count is not None else len(rows),
                 "database_ranked_count": len(ranked),
-                "top10": rows[:10],
-                "qualified": cb.get("qualified") or rows[:10],
-                "weak_watch": cb.get("weak_watch") or [],
-                "risk_watch": cb.get("risk_watch") or [],
+                "top10": [self._compact_cb_row(row) for row in rows[:10]],
+                "qualified": [self._compact_cb_row(row) for row in (cb.get("qualified") or rows)[:10]],
+                "weak_watch": [self._compact_cb_row(row) for row in (cb.get("weak_watch") or [])[:10]],
+                "risk_watch": [self._compact_cb_row(row) for row in (cb.get("risk_watch") or [])[:10]],
                 "summary": summary,
-                "ranked_sample": ranked[:30],
+                "ranked_sample": [self._compact_cb_row(row) for row in ranked[:10]],
             },
         )
 
@@ -446,9 +502,26 @@ class ResearchToolbox:
             "ma5": row.get("ma5"),
             "ma10": row.get("ma10"),
             "ma20": row.get("ma20"),
+            "ma60": row.get("ma60"),
             "volume_ratio_60": row.get("vol_ratio60") or row.get("volume_ratio_60"),
+            "vol_ratio60": row.get("vol_ratio60") or row.get("volume_ratio_60"),
             "macd_hist": row.get("macd_hist"),
+            "dif": row.get("dif") or (row.get("metrics") or {}).get("dif"),
+            "dea": row.get("dea") or (row.get("metrics") or {}).get("dea"),
+            "metrics": {
+                "dif": row.get("dif") or (row.get("metrics") or {}).get("dif"),
+                "dea": row.get("dea") or (row.get("metrics") or {}).get("dea"),
+            },
+            "signal_type": row.get("signal_type"),
+            "action": row.get("action"),
+            "date": row.get("date") or row.get("trade_date"),
             "reason": row.get("signal_reason") or row.get("reason") or row.get("missing_condition"),
+            "signal_reason": row.get("signal_reason") or row.get("reason") or row.get("missing_condition"),
+            "missing_condition": row.get("missing_condition"),
+            "watch_type": row.get("watch_type"),
+            "ma5_ma10_signal": row.get("ma5_ma10_signal"),
+            "ma5_ma20_status": row.get("ma5_ma20_status"),
+            "volume_check": row.get("volume_check"),
             "strategy_id": row.get("strategy_id"),
             "strategy_version": row.get("strategy_version"),
             "medium_status": row.get("medium_status"),
@@ -480,7 +553,45 @@ class ResearchToolbox:
             "risk_level": row.get("risk_level"),
             "reason": row.get("not_top_reason") or row.get("excluded_reason") or row.get("reason") or row.get("rank_reason"),
             "quality_notes": row.get("quality_notes") or row.get("risk_notes"),
+            "dynamic_status": row.get("dynamic_status") or row.get("auxiliary_state"),
+            "dynamic_reason": row.get("dynamic_reason") or row.get("auxiliary_reason"),
         }
+
+    def _compact_tl_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        keys = (
+            "date",
+            "name",
+            "code",
+            "state",
+            "display_status",
+            "action",
+            "buy_signal",
+            "attention_signal",
+            "no_trade_signal",
+            "reason",
+            "weekly_macd_condition",
+            "weekly_macd_reason",
+            "weekly_kdj_threshold_check",
+            "weekly_kdj_rebound",
+            "daily_macd_condition",
+            "daily_macd_reason",
+            "daily_kdj_threshold_check",
+            "daily_kdj_rebound",
+            "fund_share_change_daily",
+            "fund_share_daily_level",
+            "fund_share_5d_sum",
+            "fund_share_5d_valid_days",
+            "fund_flow_state",
+            "fund_flow_relation",
+            "fund_flow_note",
+            "fund_flow_data_quality",
+            "risk_notes",
+        )
+        return {key: row.get(key) for key in keys if key in row}
+
+    def _compact_market_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        keys = ("trade_date", "date", "name", "code", "close", "ma5", "ma10", "ma20", "ma60", "vol_ratio60", "macd_hist", "dif", "dea", "kdj_j")
+        return {key: row.get(key) for key in keys if key in row}
 
     def _safe_float(self, value: Any) -> float:
         try:

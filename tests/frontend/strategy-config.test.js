@@ -128,6 +128,12 @@ test("model settings never accept or persist a plaintext OpenAI key", () => {
   assert.equal(source.includes('id="edit-openai-key"'), false);
 });
 
+test("chat always uses the backend rule engine and treats AI as an optional explanation layer", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../../frontend/assets/app.js"), "utf8");
+  assert.equal(source.includes("allowLlm: state.aiChatEnabled"), true);
+  assert.equal(source.includes("ai_chat_not_enabled"), false);
+});
+
 test("strategy state codes render as concise Chinese labels", () => {
   assert.equal(strategyStateLabel("medium_status", "trend_confirmed"), "趋势已确认");
   assert.equal(strategyStateLabel("short_entry_status", "overheated_do_not_chase"), "过热不追");

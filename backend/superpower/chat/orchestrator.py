@@ -80,27 +80,42 @@ class ChatOrchestrator:
         trace.tools = tools
         trace.steps.append(AgentStep("ResearchToolbox", "success", f"调用 {len(tools)} 个只读工具生成证据包。"))
 
+        strategy_params = self._strategy_params_from_tools(tools)
+
         evidence_pack = EvidencePack(
             report_date=str(dashboard.get("reportDate", "--")),
             intent=intent,
-            rulebook=rules_for_intent(intent.name),
+            rulebook=rules_for_intent(intent.name, strategy_params),
             tools=tools,
             memory_context=self._memory_context_for_prompt(request.short_term_memory),
         )
 
-        prompt = self._build_prompt(request.question, evidence_pack)
-        model_config = self._load_model_config()
-        llm = generate_text(prompt, model_config, timeout_seconds=75, developer_text=self._developer_prompt())
-        trace.llm_used = llm.used
-        trace.llm_model = llm.model
-        trace.llm_reason = llm.reason
-
-        if llm.used:
-            trace.steps.append(AgentStep("LLMAnswerAgent", "success", f"{llm.provider}:{llm.model} 已生成解释。"))
-            raw_answer = llm.text
+        deterministic_answer = self._deterministic_evidence_answer(request.question, evidence_pack)
+        if self._should_use_llm(request, deterministic_answer):
+            prompt = self._build_prompt(request.question, evidence_pack)
+            model_config = self._load_model_config()
+            llm = generate_text(prompt, model_config, timeout_seconds=75, developer_text=self._developer_prompt())
+            llm_used = llm.used
+            llm_provider = llm.provider
+            llm_model = llm.model
+            llm_reason = llm.reason
+            if llm.used:
+                trace.steps.append(AgentStep("LLMAnswerAgent", "success", f"{llm.provider}:{llm.model} 已基于本地证据生成解释。"))
+                raw_answer = llm.text
+            else:
+                trace.steps.append(AgentStep("LLMAnswerAgent", "fallback", llm.reason))
+                raw_answer = deterministic_answer or self._fallback_answer(request.question, evidence_pack, llm.reason)
         else:
-            trace.steps.append(AgentStep("LLMAnswerAgent", "fallback", llm.reason))
-            raw_answer = self._fallback_answer(request.question, evidence_pack, llm.reason)
+            llm_used = False
+            llm_provider = "local"
+            llm_model = "rule_engine_v2"
+            llm_reason = "direct_evidence_answer" if deterministic_answer else "llm_disabled_by_user"
+            trace.steps.append(AgentStep("DeterministicAnswerAgent", "success", "由后端规则引擎直接回答；无需调用大模型。"))
+            raw_answer = deterministic_answer or self._fallback_answer(request.question, evidence_pack, llm_reason)
+
+        trace.llm_used = llm_used
+        trace.llm_model = llm_model
+        trace.llm_reason = llm_reason
 
         output_guard = self.guardrails.validate_output(raw_answer, intent, tools)
         trace.guardrail = output_guard
@@ -120,11 +135,26 @@ class ChatOrchestrator:
             evidence=tools,
             guardrail=output_guard,
             trace_id=trace.run_id,
-            llm_used=llm.used,
-            llm_provider=llm.provider,
-            llm_model=llm.model,
-            llm_reason=llm.reason,
+            llm_used=llm_used,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_reason=llm_reason,
         )
+
+    def _strategy_params_from_tools(self, tools: list[Any]) -> dict[str, Any]:
+        for tool in tools:
+            if tool.tool == "get_rule_contract" and isinstance(tool.data, dict):
+                params = tool.data.get("strategy_params")
+                return params if isinstance(params, dict) else {}
+        return {}
+
+    def _should_use_llm(self, request: ChatRequest, deterministic_answer: str) -> bool:
+        """Use the model only for questions that benefit from synthesis and only with user permission."""
+        if not request.allow_llm:
+            return False
+        if not self._is_complex_question(request.question):
+            return False
+        return True
 
     def _load_dashboard(self) -> dict[str, Any]:
         path = self.root_dir / "outputs" / "latest" / "dashboard.json"
@@ -317,6 +347,10 @@ class ChatOrchestrator:
         if rule_contract and isinstance(rule_contract.data, dict):
             params = rule_contract.data.get("strategy_params") or {}
 
+        strategy_answer = self._strategy_diagnosis_answer(pack, rule_contract)
+        if strategy_answer:
+            return strategy_answer
+
         missing_etf_answer = self._missing_etf_data_answer(pack)
         if missing_etf_answer:
             return missing_etf_answer
@@ -402,6 +436,67 @@ class ChatOrchestrator:
                     )
 
         return ""
+
+    def _strategy_diagnosis_answer(self, pack: EvidencePack, rule_contract: Any) -> str:
+        if pack.intent.name not in {"strategy_comparison", "strategy_stability", "historical_diagnostics"}:
+            return ""
+        contract = rule_contract.data if rule_contract and isinstance(rule_contract.data, dict) else {}
+        etf_strategy = contract.get("etf_strategy") if isinstance(contract.get("etf_strategy"), dict) else {}
+        active = str(etf_strategy.get("active_strategy") or "--")
+        diagnostics_tool = next((tool for tool in pack.tools if tool.tool == "get_strategy_diagnostics"), None)
+        diagnostic_rows = []
+        boundary = []
+        if diagnostics_tool and isinstance(diagnostics_tool.data, dict):
+            diagnostic_rows = diagnostics_tool.data.get("rows") or []
+            boundary = diagnostics_tool.data.get("boundary") or []
+
+        ten_day = [
+            row
+            for row in diagnostic_rows
+            if int(row.get("horizon") or 0) == 10 and str(row.get("state_type") or "can_enter") == "can_enter"
+        ]
+        metric_lines = []
+        route_labels = {"breakout_confirmation": "突破确认", "pullback_confirmation": "回踩确认"}
+        for row in ten_day[:4]:
+            strategy_id = row.get("strategy_id") or "--"
+            strategy_label = "原策略" if strategy_id == "legacy_v1" else "2.0"
+            route = f"（{route_labels.get(str(row.get('entry_route')), row.get('entry_route'))}）" if row.get("entry_route") else ""
+            samples = row.get("complete_horizon_count", row.get("sample_count", "--"))
+            positive = row.get("positive_return_rate", row.get("positive_rate"))
+            mean_return = row.get("mean_return", row.get("average_return"))
+            adverse = row.get("mean_maximum_adverse_excursion", row.get("average_max_adverse_excursion"))
+            false_reversal = row.get("false_reversal_10d_rate", row.get("false_reversal_rate"))
+            metric_lines.append(
+                f"{strategy_label}{route}：样本{samples}，正收益{self._fmt_percent(positive)}，"
+                f"平均收益{self._fmt_percent(mean_return)}，平均最大不利波动{self._fmt_percent(adverse)}，"
+                f"假反转{self._fmt_percent(false_reversal)}"
+            )
+        metrics = "；".join(metric_lines) if metric_lines else "当前没有可用的10日历史诊断汇总"
+
+        if pack.intent.name == "strategy_comparison":
+            return (
+                f"当前默认ETF策略是 {active}。原策略偏向当日均线、MACD和量能共振；2.0增加了中期趋势确认、过热过滤以及突破/回踩两种入场路径。\n\n"
+                f"现有历史诊断：{metrics}。\n\n"
+                "不能只看一项正收益比例就断定哪个更好。2.0在设计上减少信号、强调入场质量，但现有诊断没有证明它整体优于原策略。"
+            )
+        if pack.intent.name == "strategy_stability":
+            return (
+                f"工程上目前规则是稳定可复现的：当前启用 {active}，信号由固定代码和配置生成，AI不改信号。\n\n"
+                f"历史证据方面：{metrics}。\n\n"
+                "但这还不能证明策略能稳定盈利。现有数据属于信号事件诊断，不是包含仓位、交易成本和组合净值的完整回测；"
+                "因此可以说规则运行稳定，不能说收益已经被验证稳定。"
+            )
+        return (
+            f"历史诊断是回看每次信号出现后1、3、5、10、20个交易日的表现。当前10日摘要：{metrics}。\n\n"
+            "主要看四项：有效样本、正收益比例、平均收益、期间平均最大不利波动；假反转只在设定口径下统计。\n\n"
+            f"边界：{'；'.join(str(item) for item in boundary) if boundary else '它是信号诊断，不等同于完整组合回测。'}"
+        )
+
+    def _fmt_percent(self, value: Any) -> str:
+        try:
+            return f"{float(value) * 100:.2f}%"
+        except (TypeError, ValueError):
+            return "--"
 
     def _missing_etf_data_answer(self, pack: EvidencePack) -> str:
         if pack.intent.name != "etf_detail":
@@ -686,6 +781,13 @@ class ChatOrchestrator:
         risk = params.get("risk", {}) if isinstance(params, dict) else {}
         etf_weights = etf.get("score_weights", {}) if isinstance(etf, dict) else {}
         cb_weights = cb.get("score_weights", {}) if isinstance(cb, dict) else {}
+
+        if "策略" in question and any(token in question for token in ["现在", "当前", "使用", "启用", "默认"]):
+            return (
+                f"当前ETF默认策略是 {etf.get('active_strategy', '--')}；"
+                f"可转债默认策略是 {cb.get('active_strategy', '--')}。\n\n"
+                "TL没有单独的插件切换，使用技术规则，并把30年国债ETF份额变化作为辅助观察。"
+            )
 
         catalog = self._parameter_catalog()
         if self._asks_parameter_catalog(question):
@@ -977,7 +1079,16 @@ class ChatOrchestrator:
         intent: Any,
         repository: DatabaseRepository,
     ) -> Any:
-        if intent.name in {"asset_list", "database_inventory", "data_quality", "agent_audit", "strategy_params"}:
+        if intent.name in {
+            "asset_list",
+            "database_inventory",
+            "data_quality",
+            "agent_audit",
+            "strategy_params",
+            "strategy_comparison",
+            "strategy_stability",
+            "historical_diagnostics",
+        }:
             return intent
 
         asset = repository.resolve_asset(question)
