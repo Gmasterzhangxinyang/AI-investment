@@ -85,6 +85,28 @@ def test_evidence_planner_keeps_convertible_question_compact() -> None:
     assert payload_chars < 30_000
 
 
+def test_convertible_evidence_keeps_all_four_dynamic_factors() -> None:
+    row = {
+        "bond_name": "测试转债",
+        "bond_code": "123456.SZ",
+        "stock_daily_return": -1.68,
+        "bond_daily_return": -0.72,
+        "conversion_premium_change": 0.98,
+        "auxiliary_score": 37.64,
+        "auxiliary_state": "正常联动",
+        "auxiliary_note": "四项处于正常联动范围",
+    }
+
+    compact = ResearchToolbox({})._compact_cb_row(row)
+
+    assert compact["stock_daily_return"] == -1.68
+    assert compact["bond_daily_return"] == -0.72
+    assert compact["stock_bond_relative_gap"] == -0.96
+    assert compact["conversion_premium_change"] == 0.98
+    assert compact["auxiliary_score"] == 37.64
+    assert compact["auxiliary_state"] == "正常联动"
+
+
 def test_llm_is_only_used_for_complex_questions_when_user_enables_it() -> None:
     orchestrator = ChatOrchestrator(ROOT)
 

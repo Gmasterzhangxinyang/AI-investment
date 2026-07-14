@@ -72,7 +72,7 @@
   }
 
   function tableColumnClass(key) {
-    return ["signal_reason", "watch_type", "missing_condition", "suggested_action", "decision_reason", "risk_overlay_summary", "fund_flow_note", "linkage_note"].includes(key)
+    return ["signal_reason", "watch_type", "missing_condition", "suggested_action", "decision_reason", "risk_overlay_summary", "fund_flow_note", "linkage_note", "auxiliary_evidence"].includes(key)
       ? "long-text-column"
       : "";
   }
@@ -82,7 +82,7 @@
   }
 
   function auxiliaryStateLabel(value) {
-    return ["正常联动", "未启用", "", null, undefined].includes(value) ? "--" : value;
+    return ["未启用", "", null, undefined].includes(value) ? "--" : value;
   }
 
   function strategyStateLabel(key, value) {

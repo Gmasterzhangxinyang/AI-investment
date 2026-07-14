@@ -553,9 +553,25 @@ class ResearchToolbox:
             "risk_level": row.get("risk_level"),
             "reason": row.get("not_top_reason") or row.get("excluded_reason") or row.get("reason") or row.get("rank_reason"),
             "quality_notes": row.get("quality_notes") or row.get("risk_notes"),
-            "dynamic_status": row.get("dynamic_status") or row.get("auxiliary_state"),
-            "dynamic_reason": row.get("dynamic_reason") or row.get("auxiliary_reason"),
+            "stock_daily_return": row.get("stock_daily_return"),
+            "bond_daily_return": row.get("bond_daily_return"),
+            "stock_bond_relative_gap": self._relative_gap(row),
+            "conversion_premium_change": row.get("conversion_premium_change"),
+            "auxiliary_score": row.get("auxiliary_score", row.get("dynamic_score")),
+            "auxiliary_state": row.get("auxiliary_state") or row.get("dynamic_state"),
+            "auxiliary_note": row.get("auxiliary_note") or row.get("dynamic_note"),
+            "auxiliary_data_quality": row.get("auxiliary_data_quality") or row.get("dynamic_data_quality"),
         }
+
+    def _relative_gap(self, row: dict[str, Any]) -> float | None:
+        try:
+            stock = row.get("stock_daily_return")
+            bond = row.get("bond_daily_return")
+            if stock in (None, "") or bond in (None, ""):
+                return None
+            return round(float(stock) - float(bond), 4)
+        except (TypeError, ValueError):
+            return None
 
     def _compact_tl_row(self, row: dict[str, Any]) -> dict[str, Any]:
         keys = (

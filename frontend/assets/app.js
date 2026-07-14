@@ -78,8 +78,44 @@ const formatValue = (key, value) => {
   if (key === "medium_status" || key === "short_entry_status") return ETFStrategyConfig.strategyStateLabel(key, value);
   if (key === "linkage_state") return ETFStrategyConfig.linkageStateLabel(value);
   if (key === "auxiliary_state") return ETFStrategyConfig.auxiliaryStateLabel(value);
+  if (key === "stock_bond_relative_gap" || key === "conversion_premium_change") return signedMetric(value, "pct");
   return formatNumber(value);
 };
+
+function numericMetric(value) {
+  if (value === null || value === undefined || value === "") return Number.NaN;
+  return Number(value);
+}
+
+function signedMetric(value, suffix = "") {
+  const number = numericMetric(value);
+  if (!Number.isFinite(number)) return "--";
+  const sign = number > 0 ? "+" : "";
+  return `${sign}${number.toFixed(2)}${suffix}`;
+}
+
+function convertibleAuxiliaryEvidence(row) {
+  const stock = numericMetric(row.stock_daily_return);
+  const bond = numericMetric(row.bond_daily_return);
+  const premium = numericMetric(row.conversion_premium_change);
+  const relative = Number.isFinite(stock) && Number.isFinite(bond) ? stock - bond : numericMetric(row.stock_bond_relative_gap);
+  const score = numericMetric(row.auxiliary_score ?? row.dynamic_score);
+  const factors = [
+    `正股 ${signedMetric(stock, "%")}`,
+    `转债 ${signedMetric(bond, "%")}`,
+    `相对 ${signedMetric(relative, "pct")}`,
+    `溢价 ${signedMetric(premium, "pct")}`,
+  ];
+  if (Number.isFinite(score)) factors.push(`辅助分 ${score.toFixed(2)}`);
+  return factors.join(" · ");
+}
+
+function convertibleRowsForDisplay(rows) {
+  return (rows || []).map((row) => ({
+    ...row,
+    auxiliary_evidence: convertibleAuxiliaryEvidence(row),
+  }));
+}
 
 const escapeHtml = (value) =>
   String(value ?? "")
@@ -468,6 +504,9 @@ function renderAssetDetail() {
     }
     const payload = snapshot.payload_json || {};
     const cbRow = mergeRecords(dashboardHit?.row || {}, payload, snapshot);
+    cbRow.stock_bond_relative_gap = Number.isFinite(numericMetric(cbRow.stock_daily_return)) && Number.isFinite(numericMetric(cbRow.bond_daily_return))
+      ? numericMetric(cbRow.stock_daily_return) - numericMetric(cbRow.bond_daily_return)
+      : cbRow.stock_bond_relative_gap;
     const qualification = cbRow.qualification || dashboardHit?.bucket || "";
     cbRow.detail_date = cbRow.report_date || String(cbRow.date || "").slice(0, 10);
     cbRow.qualification_display = qualificationLabel(qualification);
@@ -491,8 +530,10 @@ function renderAssetDetail() {
       ["风险提示", cbRow.quality_notes || cbRow.risk_flags],
       ["正股当日涨幅", cbRow.stock_daily_return],
       ["转债当日涨幅", cbRow.bond_daily_return],
+      ["股债相对强弱", `正股-转债 ${signedMetric(cbRow.stock_bond_relative_gap, " 个百分点")}`],
       ["溢价率当日变化", cbRow.conversion_premium_change],
-      ["动态辅助", ETFStrategyConfig.auxiliaryStateLabel(cbRow.auxiliary_state ?? cbRow.dynamic_state)],
+      ["动态辅助分", cbRow.auxiliary_score ?? cbRow.dynamic_score],
+      ["动态判断", ETFStrategyConfig.auxiliaryStateLabel(cbRow.auxiliary_state ?? cbRow.dynamic_state)],
       ["辅助说明", cbRow.auxiliary_note || cbRow.dynamic_note || "暂无异常提示；不改变基础排名"],
       ["评分依据", cbRow.rank_reason],
       ["数据来源", snapshot.bond_code ? "数据库快照" : "当前 dashboard"],
@@ -509,7 +550,10 @@ function renderAssetDetail() {
       ["conversion_premium_rate", "转股溢价率"],
       ["stock_daily_return", "正股当日涨幅"],
       ["bond_daily_return", "转债当日涨幅"],
+      ["stock_bond_relative_gap", "股债相对强弱"],
       ["conversion_premium_change", "溢价率变化"],
+      ["auxiliary_score", "动态辅助分"],
+      ["auxiliary_state", "动态判断"],
       ["linkage_state", "短期联动"],
       ["ytm", "到期收益率"],
       ["deducted_profit_growth", "扣非增速"],
@@ -1141,7 +1185,8 @@ function render() {
     ["qualification", "资格"],
     ["not_top_reason", "未入Top原因"],
     ["risk_flags", "风险提示"],
-    ["auxiliary_state", "动态辅助"],
+    ["auxiliary_state", "动态判断"],
+    ["auxiliary_evidence", "四项依据"],
     ["rank_reason", "评分依据"],
   ];
   const cbSummary = cb.summary || {};
@@ -1162,9 +1207,9 @@ function render() {
   renderTable("tl-recent-table", data.tlRecent || [], tlRecentColumns);
   renderTable("tl-panel-recent-table", data.tlRecent || [], tlRecentColumns);
   renderCbSummary(cbSummary);
-  renderTable("cb-table", cbTopRows, cbColumns, "watch");
-  renderTable("cb-top-table", cbTopRows, cbColumns, "watch");
-  renderTable("cb-ranked-table", cbRankedRows, cbColumns, "watch");
+  renderTable("cb-table", convertibleRowsForDisplay(cbTopRows), cbColumns, "watch");
+  renderTable("cb-top-table", convertibleRowsForDisplay(cbTopRows), cbColumns, "watch");
+  renderTable("cb-ranked-table", convertibleRowsForDisplay(cbRankedRows), cbColumns, "watch");
   renderTable(
     "cb-quality-table",
     (data.dataQuality || []).filter((row) => String(row.item || "").includes("可转债") || String(row.item || "").includes("强赎") || String(row.item || "").includes("YTM") || String(row.item || "").includes("评级")),
@@ -1668,6 +1713,11 @@ function renderTable(id, rows, columns, mode) {
             const tagClass =
               value === "OK" || value === "INFO" || value === "success" || value === true || value === "对" ? "ok" : "warn";
             return `<td class="${columnClass}" data-column="${escapeHtml(key)}"><span class="tag ${tagClass}">${escapeHtml(value)}</span></td>`;
+          }
+          if (key === "auxiliary_state") {
+            const label = ETFStrategyConfig.auxiliaryStateLabel(value);
+            const tagClass = label === "正常联动" ? "ok" : label === "数据不足" ? "warn" : /走弱|追涨/.test(label) ? "sell" : "watch";
+            return `<td class="${columnClass}" data-column="${escapeHtml(key)}"><span class="tag ${tagClass}">${escapeHtml(label)}</span></td>`;
           }
           if (key === "signal_reason" || key === "watch_type") {
             const tagClass = mode === "sell" ? "sell" : mode === "watch" ? "watch" : "buy";
@@ -2183,14 +2233,14 @@ function localConvertibleAnswer(question) {
   const name = row.bond_name || row.name || "--";
   const code = row.bond_code || row.code || "--";
   const reason = row.not_top_reason || row.excluded_reason || row.rank_reason || "--";
-  const strategyLine = `当前基础策略：原策略 v1；基础分 ${formatNumber(row.base_score ?? row.score)}。动态辅助：${ETFStrategyConfig.auxiliaryStateLabel(row.auxiliary_state ?? row.dynamic_state)}。${row.auxiliary_note || row.dynamic_note || ""}动态辅助不改变资格、动作和排名。`;
+  const strategyLine = `当前基础策略：原策略 v1；基础分 ${formatNumber(row.base_score ?? row.score)}。动态判断：${ETFStrategyConfig.auxiliaryStateLabel(row.auxiliary_state ?? row.dynamic_state)}，辅助分 ${formatNumber(row.auxiliary_score ?? row.dynamic_score)}。${row.auxiliary_note || row.dynamic_note || ""}动态辅助不改变资格、动作和排名。`;
   return [
     `结论：${name}（${code}）截至 ${state.data?.reportDate || "--"} 不进入合格 Top 候选。当前分层：${qualificationLabel(row.qualification || hit.bucket)}；是否可进合格 Top：${row.eligible_for_top === true ? "是" : "否"}。`,
     `核心原因：${reason}`,
     `当前字段：价格 ${formatNumber(row.price)}，转股溢价率 ${formatNumber(row.conversion_premium_rate)}，YTM ${formatNumber(row.ytm)}，评级 ${row.bond_rating || row.rating || "--"}，存续规模 ${formatNumber(row.remaining_size)}，强赎状态 ${row.redemption_status || "--"}，基础分 ${formatNumber(row.base_score ?? row.score)}，基础等级 ${row.base_grade || row.score_grade || "--"}，风险等级 ${row.risk_level || "--"}。`,
     `风险备注：${formatNumber(row.quality_notes || row.risk_flags || "--")}`,
     strategyLine,
-    `动态辅助原始值：正股 ${formatNumber(row.stock_daily_return)}%，转债 ${formatNumber(row.bond_daily_return)}%，溢价率变化 ${formatNumber(row.conversion_premium_change)} 个百分点。`,
+    `动态辅助四项依据：${convertibleAuxiliaryEvidence(row)}。`,
     "规则口径：可转债先做价格、评级、强赎、YTM、溢价率、规模和基本面等风控，再做候选资格分层；弱观察和风险观察不补进合格 Top。",
     "来源：本地 dashboard.convertible_bond、cbExcluded、策略参数。",
   ].join("\n\n");

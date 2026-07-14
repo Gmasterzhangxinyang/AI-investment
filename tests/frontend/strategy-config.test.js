@@ -97,6 +97,7 @@ test("ETF explanation columns receive a wrapping class", () => {
   assert.equal(tableColumnClass("risk_overlay_summary"), "long-text-column");
   assert.equal(tableColumnClass("fund_flow_note"), "long-text-column");
   assert.equal(tableColumnClass("linkage_note"), "long-text-column");
+  assert.equal(tableColumnClass("auxiliary_evidence"), "long-text-column");
   assert.equal(tableColumnClass("score"), "");
 });
 
@@ -107,8 +108,8 @@ test("convertible linkage state hides normal noise and keeps warnings", () => {
   assert.equal(linkageStateLabel("谨慎追涨"), "谨慎追涨");
 });
 
-test("convertible auxiliary state hides normal noise but shows missing data", () => {
-  assert.equal(auxiliaryStateLabel("正常联动"), "--");
+test("convertible auxiliary state shows normal and abnormal conclusions", () => {
+  assert.equal(auxiliaryStateLabel("正常联动"), "正常联动");
   assert.equal(auxiliaryStateLabel("数据不足"), "数据不足");
   assert.equal(auxiliaryStateLabel("关注补涨"), "关注补涨");
   assert.equal(auxiliaryStateLabel("谨慎追涨"), "谨慎追涨");
@@ -119,6 +120,8 @@ test("convertible table source contains no combined-score or dynamic-state label
   const source = fs.readFileSync(path.join(__dirname, "../../frontend/assets/app.js"), "utf8");
   assert.equal(source.includes('["score", "综合分"]'), false);
   assert.equal(source.includes('["dynamic_state", "动态状态"]'), false);
+  assert.equal(source.includes('["auxiliary_state", "动态判断"]'), true);
+  assert.equal(source.includes('["auxiliary_evidence", "四项依据"]'), true);
 });
 
 test("model settings never accept or persist a plaintext OpenAI key", () => {
