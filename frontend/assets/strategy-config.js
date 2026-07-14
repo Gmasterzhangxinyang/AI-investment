@@ -181,5 +181,11 @@
     return "数据已更新";
   }
 
-  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, auxiliaryStateLabel, historicalComparisonRows, actionableSystemNotices, systemStatusLabel };
+  function qualityMetric(rows, item, fallback = 0) {
+    const row = (rows || []).find((entry) => String(entry?.item || "") === item);
+    const value = Number(row?.detail ?? row?.value);
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  return { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, auxiliaryStateLabel, historicalComparisonRows, actionableSystemNotices, systemStatusLabel, qualityMetric };
 });

@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, auxiliaryStateLabel, historicalComparisonRows, actionableSystemNotices, systemStatusLabel } = require("../../frontend/assets/strategy-config.js");
+const { deepMerge, normalizeStrategyResponse, generatedResultState, showV2StateColumns, showLegacyRiskOverlay, showCbDynamicColumns, showCbLegacyLinkageColumns, tableColumnClass, strategyStateLabel, linkageStateLabel, auxiliaryStateLabel, historicalComparisonRows, actionableSystemNotices, systemStatusLabel, qualityMetric } = require("../../frontend/assets/strategy-config.js");
 
 test("deepMerge preserves dormant profiles and replaces arrays", () => {
   const current = { etf: { diagnostic_strategies: ["legacy_v1"], strategy_profiles: { future_v3: { kept: true } } } };
@@ -175,6 +175,12 @@ test("system notices hide test-environment date differences and technical row no
 test("system status uses plain user-facing labels", () => {
   assert.equal(systemStatusLabel({ run_info: { status: "partial_success" }, data_quality: { overall_status: "WARN" } }), "数据已更新");
   assert.equal(systemStatusLabel({ run_info: { status: "failed" }, data_quality: { overall_status: "ERROR" } }), "需要处理");
+});
+
+test("system status reads total valid history instead of the recent display window", () => {
+  const rows = [{ item: "TL有效交易日", detail: 779 }];
+  assert.equal(qualityMetric(rows, "TL有效交易日", 20), 779);
+  assert.equal(qualityMetric([], "TL有效交易日", 20), 20);
 });
 
 test("system navigation hides raw agent audit and exposes technical details on demand", () => {

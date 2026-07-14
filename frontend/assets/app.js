@@ -326,7 +326,12 @@ function renderSystemStatus(result = state.dbStatus || {}) {
   const data = state.data;
   const sources = data.sourceManifest || [];
   const etfCount = Number(data.etf?.counts?.all_signals ?? data.etf?.all_signals?.length ?? 0);
-  const tlCount = Number(data.tl?.recent?.length ?? data.tlRecent?.length ?? 0);
+  const tlRecentCount = Number(data.tl?.recent?.length ?? data.tlRecent?.length ?? 0);
+  const tlHistoryDays = ETFStrategyConfig.qualityMetric(
+    data.dataQuality || data.data_quality?.checks || [],
+    "TL有效交易日",
+    tlRecentCount,
+  );
   const cbCounts = data.convertible_bond?.counts || {};
   const cbCount = Number(cbCounts.ranked_candidates || 0) + Number(cbCounts.excluded || 0);
   const statusLabel = ETFStrategyConfig.systemStatusLabel(data);
@@ -335,7 +340,7 @@ function renderSystemStatus(result = state.dbStatus || {}) {
     ["更新结果", statusLabel],
     ["最近更新时间", generatedAt],
     ["ETF数据", `已读取 ${etfCount} 只`],
-    ["TL数据", `已读取 ${tlCount} 日`],
+    ["TL数据", `历史 ${tlHistoryDays} 个交易日`],
     ["可转债数据", `已读取 ${cbCount} 只`],
     ["源文件", `${sources.filter((row) => row.exists).length}/${sources.length || 3} 已读取`],
   ];
