@@ -323,6 +323,9 @@ def test_llm_is_only_used_for_complex_questions_when_user_enables_it() -> None:
 
 
 def test_current_strategy_question_has_a_direct_backend_answer() -> None:
+    strategy_params = json.loads((ROOT / "configs" / "strategy_params.json").read_text(encoding="utf-8"))
+    etf_strategy = strategy_params["etf"]["active_strategy"]
+    cb_strategy = strategy_params["convertible_bond"]["active_strategy"]
     pack = ResearchToolbox({}, ConfigRepository(ROOT)).collect(ChatIntent("strategy_params", 0.95, {}))
     answer = ChatOrchestrator(ROOT)._deterministic_evidence_answer(
         "现在使用哪个策略？",
@@ -334,5 +337,5 @@ def test_current_strategy_question_has_a_direct_backend_answer() -> None:
         ),
     )
 
-    assert "ETF默认策略是 legacy_v1" in answer
-    assert "可转债默认策略是 dynamic_v2" in answer
+    assert f"ETF默认策略是 {etf_strategy}" in answer
+    assert f"可转债默认策略是 {cb_strategy}" in answer

@@ -9,6 +9,7 @@ from typing import Any
 
 import pandas as pd
 
+from superpower.runtime.artifact_store import atomic_write_text
 from superpower.runtime.context import AgentContext
 
 
@@ -39,7 +40,8 @@ class Skill:
 
         manifest = pd.DataFrame(records)
         manifest_path = archive_dir / "source_manifest.json"
-        manifest_path.write_text(
+        atomic_write_text(
+            manifest_path,
             json.dumps(
                 {
                     "run_id": context.run_id,
@@ -49,13 +51,13 @@ class Skill:
                 ensure_ascii=False,
                 indent=2,
             ),
-            encoding="utf-8",
         )
 
         strategy_snapshot = context.maybe("etf_config_snapshot")
         if strategy_snapshot is not None:
             snapshot_path = archive_dir / "etf_strategy_config.json"
-            snapshot_path.write_text(
+            atomic_write_text(
+                snapshot_path,
                 json.dumps(
                     {
                         "run_id": context.run_id,
@@ -65,7 +67,6 @@ class Skill:
                     ensure_ascii=False,
                     indent=2,
                 ),
-                encoding="utf-8",
             )
             context.put("etf_config_snapshot_path", snapshot_path)
 

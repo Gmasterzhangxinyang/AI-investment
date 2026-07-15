@@ -34,7 +34,7 @@ class Skill:
                 {"item": "可转债Top10数量", "value": len(cb_top10), "level": "INFO" if len(cb_top10) else "WARN"},
                 {"item": "数据质检WARN数量", "value": quality_warns, "level": "WARN" if quality_warns else "INFO"},
                 {"item": "数据质检FAIL数量", "value": quality_fails, "level": "ERROR" if quality_fails else "INFO"},
-                {"item": "回测诊断WARN数量", "value": backtest_warns, "level": "WARN" if backtest_warns else "INFO"},
+                {"item": "历史诊断WARN数量", "value": backtest_warns, "level": "WARN" if backtest_warns else "INFO"},
             ]
         )
         context.put("risk_summary", risk_summary)

@@ -273,3 +273,13 @@ test("system navigation hides raw agent audit and exposes technical details on d
   assert.equal(html.includes("今日更新状态"), true);
   assert.equal(styles.includes(".system-technical-details:not([open]) > .technical-sections"), true);
 });
+
+test("stable frontend assets use current cache keys and the default local address", () => {
+  const html = fs.readFileSync(path.join(__dirname, "../../frontend/index.html"), "utf8");
+  const source = fs.readFileSync(path.join(__dirname, "../../frontend/assets/app.js"), "utf8");
+  assert.equal(html.includes("styles.css?v=20260715-stable-ui"), true);
+  assert.equal(html.includes("strategy-config.js?v=20260715-stable-rules"), true);
+  assert.equal(html.includes("app.js?v=20260715-stable-runtime"), true);
+  assert.equal(source.includes("127.0.0.1:8771"), false);
+  assert.equal(source.includes("127.0.0.1:8766/frontend/"), true);
+});

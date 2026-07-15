@@ -85,7 +85,7 @@ chat/agent_runtime.py
 chat/evidence_review.py
 ```
 
-ETF, TL, convertible bond ranking, QA, indicators, backtest, risk summary, and report generation are deterministic Python code.
+ETF, TL, convertible bond ranking, QA, indicators, historical diagnostics, risk summary, and report generation are deterministic Python code.
 
 ### backend/superpower/runtime
 

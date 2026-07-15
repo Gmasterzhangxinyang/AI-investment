@@ -62,7 +62,7 @@ This runtime cannot call refresh, write files, write SQLite, browse the web, acc
 
 - DataQAAnalyst: reviews freshness, templates, missing fields, and history length.
 - StrategyReviewer: checks whether ETF/TL/convertible-bond outputs are explainable from deterministic rules.
-- RiskReviewer: reviews QA warnings, backtest limitations, and report risk language.
+- RiskReviewer: reviews QA warnings, historical-diagnostic limitations, and report risk language.
 - ReportWriter: drafts a user-facing conclusion from existing tables only.
 
 These roles can critique and explain, but cannot mutate any context artifacts used by strategy or risk.

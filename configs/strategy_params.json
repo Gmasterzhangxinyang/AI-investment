@@ -1,6 +1,6 @@
 {
   "etf": {
-    "active_strategy": "legacy_v1",
+    "active_strategy": "trend_pullback_v2",
     "diagnostic_strategies": [
       "legacy_v1",
       "trend_pullback_v2"

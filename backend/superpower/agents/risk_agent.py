@@ -29,7 +29,7 @@ class RiskAgent(SkillBackedAgent):
         quality_gates=(
             "平仓提示数量超过0时必须进入风控摘要",
             "TL 状态必须进入组合层摘要",
-            "数据质量和回测历史不足必须进入组合层摘要",
+            "数据质量和历史诊断样本不足必须进入组合层摘要",
             "风控只汇总和分级，不更改策略信号",
         ),
         decision_policy="风控 Agent 可以把 workflow 标为 warning，但不能覆盖策略表。",

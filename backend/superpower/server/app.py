@@ -34,6 +34,7 @@ from superpower.skills.etf_rotation_strategy.config import (
     validate_all_etf_profiles,
 )
 from superpower.skills.etf_rotation_strategy.registry import default_registry
+from superpower.runtime.artifact_store import atomic_write_text
 from superpower.tools.llm import generate_text
 from superpower.tools.pdf_report import write_research_pdf
 from superpower.tools.text_cleaner import clean_llm_text
@@ -399,7 +400,7 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
                     }
                 )
             output_path = self.root_dir / "outputs" / "latest" / "deep_review.json"
-            output_path.write_text(json.dumps({"reviews": reviews}, ensure_ascii=False, indent=2), encoding="utf-8")
+            atomic_write_text(output_path, json.dumps({"reviews": reviews}, ensure_ascii=False, indent=2))
         except Exception as exc:
             self._send_json({"status": "failed", "message": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
@@ -463,9 +464,7 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
             path = self.root_dir / "configs" / "strategy_params.json"
             params = merge_strategy_params(self._load_strategy_params(), params)
             _validate_strategy_params(params)
-            tmp_path = path.with_suffix(".json.tmp")
-            tmp_path.write_text(json.dumps(params, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            tmp_path.replace(path)
+            atomic_write_text(path, json.dumps(params, ensure_ascii=False, indent=2) + "\n")
         except Exception as exc:
             self._send_json({"status": "failed", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -481,9 +480,7 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
             path = self.root_dir / "configs" / "model_config.json"
             existing = self._load_model_config()
             config = _merge_model_config_secrets(existing, config)
-            tmp_path = path.with_suffix(".json.tmp")
-            tmp_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            tmp_path.replace(path)
+            atomic_write_text(path, json.dumps(config, ensure_ascii=False, indent=2) + "\n")
         except Exception as exc:
             self._send_json({"status": "failed", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -736,7 +733,7 @@ def _deep_review_fallback(role: dict[str, str], payload: dict[str, Any]) -> str:
         return f"深度复核未完成模型调用，使用规则摘要：ETF建仓 {len(etf_buys)} 个、关注 {len(etf_watch)} 个、平仓 {len(etf_sells)} 个；TL状态为{tl_state}。"
     if role["role"] == "RiskReviewer":
         backtest_warns = sum(1 for row in backtest if row.get("level") == "WARN")
-        return f"深度复核未完成模型调用，使用规则摘要：回测诊断 WARN {backtest_warns} 项，可转债Top10 {len(cb_top10)} 个。"
+        return f"深度复核未完成模型调用，使用规则摘要：历史诊断 WARN {backtest_warns} 项，可转债Top10 {len(cb_top10)} 个。"
     return f"深度复核未完成模型调用，使用规则摘要：今日 ETF建仓 {len(etf_buys)}、关注 {len(etf_watch)}、平仓 {len(etf_sells)}，TL为{tl_state}，可转债Top10为{len(cb_top10)}。"
 
 
@@ -1032,8 +1029,7 @@ def _write_local_env_secret(root_dir: Path, env_name: str, value: str) -> None:
         updated.append(line)
     if not replaced:
         updated.append(replacement)
-    env_path.write_text("\n".join(updated) + "\n", encoding="utf-8")
-    env_path.chmod(0o600)
+    atomic_write_text(env_path, "\n".join(updated) + "\n", mode=0o600)
 
 
 def _mask_secret(value: str) -> str:

@@ -30,15 +30,28 @@ class ArtifactStore:
         return path
 
 
-def atomic_write_text(path: Path, content: str, *, encoding: str = "utf-8") -> Path:
+def atomic_write_text(
+    path: Path,
+    content: str,
+    *,
+    encoding: str = "utf-8",
+    mode: int | None = None,
+) -> Path:
     """Publish one complete text file without exposing a partially written target."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     try:
-        with temporary.open("w", encoding=encoding) as handle:
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o666 if mode is None else mode,
+        )
+        with os.fdopen(descriptor, "w", encoding=encoding) as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
+        if mode is not None:
+            temporary.chmod(mode)
         temporary.replace(path)
     finally:
         if temporary.exists():

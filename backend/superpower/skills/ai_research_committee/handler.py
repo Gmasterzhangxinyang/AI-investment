@@ -27,7 +27,7 @@ COMMITTEE_ROLES = [
     {
         "role": "RiskReviewer",
         "title": "风险审稿员",
-        "developer": "你是机构投研系统的风险审稿员。只能根据风控摘要和回测诊断提示风险；不得承诺收益，不得建议绕过风控。禁止使用Markdown，不要使用#、**、表格、分割线、项目符号，只输出商务纯文本。",
+        "developer": "你是机构投研系统的风险审稿员。只能根据风控摘要和历史诊断提示风险；不得承诺收益，不得建议绕过风控。禁止使用Markdown，不要使用#、**、表格、分割线、项目符号，只输出商务纯文本。",
         "focus": "指出短样本、数据缺失、集中风险、信号过少/过多、人工复核事项。输出：风险等级和风险话术。",
     },
     {
@@ -133,5 +133,5 @@ def _fallback_review(role: dict[str, str], payload: dict[str, Any]) -> str:
     if role["role"] == "StrategyReviewer":
         return f"模板复核：ETF建仓 {etf_buys} 个、关注 {etf_watch} 个、平仓 {etf_sells} 个；TL状态为{tl_state}；AI未改写任何信号。"
     if role["role"] == "RiskReviewer":
-        return f"模板复核：回测诊断 WARN {backtest_warns} 项，可转债Top10 {cb_count} 个。当前不可把短样本结果包装成收益验证。"
+        return f"模板复核：历史诊断 WARN {backtest_warns} 项，可转债Top10 {cb_count} 个。当前不可把短样本结果包装成收益验证。"
     return f"模板复核：今日ETF建仓 {etf_buys}、关注 {etf_watch}、平仓 {etf_sells}，TL为{tl_state}，可转债Top10为{cb_count}。"

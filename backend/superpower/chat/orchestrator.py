@@ -101,6 +101,11 @@ class ChatOrchestrator:
         else:
             tools = toolbox.collect(intent)
             trace.steps.append(AgentStep("ResearchToolbox", "success", f"调用 {len(tools)} 个只读工具生成证据包。"))
+        if intent.name == "etf_detail" and intent.entities.get("codes") and not any(
+            tool.tool == "get_etf_multi_assets" for tool in tools
+        ):
+            tools.append(toolbox.get_etf_multi_assets(intent.entities["codes"]))
+            trace.steps.append(AgentStep("MultiAssetEvidenceGuard", "success", "已补齐本轮全部ETF的逐只证据。"))
         trace.tools = tools
 
         strategy_params = self._strategy_params_from_tools(tools)
@@ -228,6 +233,10 @@ class ChatOrchestrator:
             return False
         if not request.allow_llm:
             return False
+        if intent_name == "etf_detail" and "这几只 ETF 的状态如下" in deterministic_answer:
+            # 多标的状态核对属于确定性查询。直接返回逐只规则结果，避免模型把
+            # no_entry 口语化成“进入观察”等不存在的状态，同时也显著降低等待时间。
+            return False
         if agent_planned:
             if intent_name == "etf_ranking" and deterministic_answer and not self._is_complex_question(request.question):
                 return False
@@ -323,6 +332,7 @@ class ChatOrchestrator:
             "如果 memory_context 提供了上一轮标的，用户说“它、这只、刚才那个”时可以沿用该标的，但必须说明沿用了上下文。"
             "如果用户要求列出数据库标的，必须完整列出 EvidencePack 里的 assets 名称和代码，不要只列关注池。"
             "如果用户问某只 ETF 今天表现，即使它不在建仓候选或关注池，也要使用 ETF single asset 工具里的 latest_bar 和 history 分析。"
+            "如果用户一次询问多只ETF，必须逐只使用ETF multi-asset证据回答，不得只分析其中一只，也不得把已返回的其它标的写成缺少证据。"
             "如果用户问“怎么看、怎么操作、有没有问题”，只能输出规则动作提示、风险提示和人工复核重点，不能写建议买入或保证收益。"
             "如果证据显示没有该标的或该日期，必须明确回答没有数据，并说明需要先刷新或补充 Wind 文件。"
             "不得声称自己已经或可以执行刷新、写库、修改策略、下单等未开放动作，也不要主动征求执行这些动作的许可。"
@@ -577,6 +587,10 @@ class ChatOrchestrator:
         missing_etf_answer = self._missing_etf_data_answer(pack)
         if missing_etf_answer:
             return missing_etf_answer
+
+        multi_etf_answer = self._multi_etf_diagnosis_answer(pack)
+        if multi_etf_answer:
+            return multi_etf_answer
 
         etf_asset_answer = self._single_etf_diagnosis_answer(question, pack, params)
         if etf_asset_answer:
@@ -1007,6 +1021,58 @@ class ChatOrchestrator:
             f"当前不知道{name}的情况：最新日报和数据库里没有这只 ETF 的有效数据。\n\n"
             "系统不会用库外信息补猜，也不会编造技术指标。请先确认 Wind ETF 文件包含该标的，并重新点击一键刷新。"
         )
+
+    def _multi_etf_diagnosis_answer(self, pack: EvidencePack) -> str:
+        if pack.intent.name != "etf_detail":
+            return ""
+        tool = next((item for item in pack.tools if item.tool == "get_etf_multi_assets"), None)
+        data = tool.data if tool and isinstance(tool.data, dict) else {}
+        assets = data.get("assets") or []
+        if not assets:
+            return ""
+        lines = [f"截至 {pack.report_date}，这几只 ETF 的状态如下："]
+        observed: list[str] = []
+        confirmed: list[str] = []
+        neither: list[str] = []
+        for item in assets:
+            asset = item.get("asset") or {}
+            signal = item.get("dashboard_signal") or {}
+            latest = item.get("latest_bar") or {}
+            name = str(signal.get("name") or asset.get("name") or asset.get("code") or "该ETF")
+            code = str(signal.get("code") or asset.get("code") or "--")
+            medium = str(signal.get("medium_status") or "data_unavailable")
+            short = str(signal.get("short_entry_status") or "data_unavailable")
+            medium_label = self._etf_medium_status_label(medium)
+            short_label = self._etf_short_status_label(short)
+            reason = str(signal.get("medium_reason") or signal.get("short_entry_reason") or signal.get("signal_reason") or "未返回具体原因")
+            raw_hits = signal.get("rule_hits") or []
+            hit_values = re.split(r"[；;,，]", raw_hits) if isinstance(raw_hits, str) else list(raw_hits)
+            hit_labels = self._etf_v2_hit_labels([item for item in hit_values if item])
+            if hit_labels and medium != "trend_confirmed":
+                reason = f"{reason}：{'、'.join(hit_labels)}"
+            close = self._fmt_metric(signal.get("close", latest.get("close")))
+            lines.append(
+                f"{len(lines)}. {name}（{code}）：中期“{medium_label}”，短期“{short_label}”；"
+                f"收盘 {close}。{reason}"
+            )
+            if short == "close_watch":
+                observed.append(name)
+            if medium == "trend_confirmed":
+                confirmed.append(name)
+            if short != "close_watch" and medium != "trend_confirmed":
+                neither.append(name)
+        conclusion_parts = []
+        if confirmed:
+            conclusion_parts.append(f"趋势确认：{'、'.join(confirmed)}")
+        if observed:
+            conclusion_parts.append(f"密切观察：{'、'.join(observed)}")
+        if neither:
+            conclusion_parts.append(f"尚未进入两种状态：{'、'.join(neither)}")
+        if not conclusion_parts:
+            conclusion_parts.append("目前没有标的进入密切观察或趋势确认")
+        lines.append(f"结论：{'；'.join(conclusion_parts)}。趋势确认不等于短期建仓，仍以短期入场状态为准。")
+        lines.append("来源：最新 dashboard.etf.all_signals 与 SQLite ETF 日频指标。")
+        return "\n\n".join(lines)
 
     def _single_etf_diagnosis_answer(self, question: str, pack: EvidencePack, params: dict[str, Any]) -> str:
         tool = next((item for item in pack.tools if item.tool == "get_etf_single_asset"), None)
@@ -1674,6 +1740,10 @@ class ChatOrchestrator:
         intent: Any,
         repository: DatabaseRepository,
     ) -> Any:
+        if intent.entities.get("codes"):
+            # Router 已识别多标的时保留完整列表和用户提及顺序；单标的解析器
+            # 只能返回一只，继续解析会把 trace 和短期记忆错误覆盖成其中某只。
+            return intent
         if intent.name in {
             "asset_list",
             "database_inventory",

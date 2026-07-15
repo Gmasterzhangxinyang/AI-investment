@@ -125,6 +125,12 @@ class ChatGuardrails:
                 for signal in data.get("signals", []) or []:
                     if str(signal.get("signal_bucket", "")).lower() == "entry" and self._truthy(signal.get("buy_signal")):
                         return True
+            if tool.tool == "get_etf_multi_assets":
+                data = tool.data if isinstance(tool.data, dict) else {}
+                for item in data.get("assets", []) or []:
+                    signal = item.get("dashboard_signal") if isinstance(item, dict) else {}
+                    if str((signal or {}).get("short_entry_status", "")).lower() == "can_enter":
+                        return True
             if tool.tool == "get_etf_strategy_comparison":
                 data = tool.data if isinstance(tool.data, dict) else {}
                 if any(self._truthy(item.get("buy_candidate")) for item in data.get("decisions", []) or []):

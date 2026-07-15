@@ -1659,7 +1659,7 @@ function renderReportRiskList(data, summary) {
   const node = document.getElementById("report-risk-list");
   if (!node) return;
   const riskItems = pickSummary(summary, "系统已识别风险项", "数据校验异常项");
-  const auditWarns = pick(summary, "回测诊断WARN数量");
+  const auditWarns = pickSummary(summary, "历史诊断WARN数量", "回测诊断WARN数量");
   const llmMode = dailyReportMode(summary);
   const qualityWarns = (data.dataQuality || []).filter((row) => !["OK", "INFO", "SUCCESS"].includes(String(row.status || "").toUpperCase())).slice(0, 3);
   const items = [
@@ -1913,7 +1913,7 @@ async function submitChat(question) {
       const answer = [
         "现在这个页面是直接用 file:// 打开的，所以不能调用后端的 /api/chat，也就不会真正进入 AI 模型。",
         "",
-        "请先双击“启动AI投研.command”，然后从 http://127.0.0.1:8771/frontend/index.html#chat 打开投研问答。这样 AI 智能问答才会读取本地数据库和 dashboard 证据包，再调用大模型组织回答。",
+        "请先双击“启动AI投研.command”，再使用启动脚本自动打开的本地页面进入投研问答（默认地址为 http://127.0.0.1:8766/frontend/）。这样系统才能调用后端规则、只读研究工具和已启用的大模型。",
         "",
         "当前我不会把本地规则模板伪装成 AI 回答。"
       ].join("\n");

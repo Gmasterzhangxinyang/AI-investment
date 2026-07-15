@@ -93,6 +93,22 @@ class EvidenceAccuracyReviewer:
                 issues.append("单只ETF缺少最新行情")
             self._check_unique_dates(data.get("history") or [], "ETF历史", issues)
             self._check_freshness(latest.get("trade_date"), report_date, "ETF行情", warnings)
+        elif tool.tool == "get_etf_multi_assets":
+            assets = data.get("assets") or []
+            if data.get("requested_count") != len(assets):
+                issues.append("多ETF查询返回数量与请求数量不一致")
+            codes = [str((item.get("asset") or {}).get("code") or "") for item in assets if isinstance(item, dict)]
+            if len(codes) != len(set(codes)):
+                issues.append("多ETF查询存在重复标的")
+            for item in assets:
+                if not isinstance(item, dict):
+                    issues.append("多ETF查询包含无效记录")
+                    continue
+                signal = item.get("dashboard_signal") or {}
+                latest = item.get("latest_bar") or {}
+                if not signal and not latest:
+                    issues.append(f"多ETF查询缺少{(item.get('asset') or {}).get('code') or '某标的'}的有效数据")
+                self._check_freshness(latest.get("trade_date") or signal.get("date"), report_date, "ETF行情", warnings)
         elif tool.tool == "get_etf_strategy_comparison":
             if not data.get("available"):
                 issues.append(str(data.get("reason") or "ETF双策略数据不可用"))

@@ -25,6 +25,15 @@ def test_atomic_write_text_replaces_complete_json_without_temp_files(tmp_path: P
     assert list(tmp_path.glob(".*.tmp")) == []
 
 
+def test_atomic_write_text_can_publish_private_files(tmp_path: Path) -> None:
+    target = tmp_path / ".env"
+
+    atomic_write_text(target, "OPENAI_API_KEY=test-only\n", mode=0o600)
+
+    assert target.read_text(encoding="utf-8") == "OPENAI_API_KEY=test-only\n"
+    assert target.stat().st_mode & 0o777 == 0o600
+
+
 def test_publish_validates_snapshot_and_switches_dashboard_last(tmp_path: Path, monkeypatch) -> None:
     staging = tmp_path / "staging"
     public_latest = tmp_path / "outputs" / "latest"

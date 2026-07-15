@@ -245,6 +245,8 @@ class ChatRouter:
             universe.extend(cb.get(key, []))
         for key in ("cbTop10", "cbRanked", "cbExcluded"):
             universe.extend(dashboard.get(key, []))
+        matched_assets: dict[str, tuple[int, str, str]] = {}
+        lowered_question = question.lower()
         for row in universe:
             name = str(row.get("name") or row.get("bond_name") or "")
             code = str(row.get("code") or row.get("bond_code") or "")
@@ -265,11 +267,25 @@ class ChatRouter:
                 aliases.add(name.removesuffix("转债"))
             aliases.add(code.replace(".SH", "").replace(".SZ", ""))
             aliases = {alias for alias in aliases if alias}
-            if any(alias in question for alias in aliases):
-                entities["name"] = name
-                if code:
-                    entities["code"] = code
-                break
+            positions = [lowered_question.find(alias.lower()) for alias in aliases if alias.lower() in lowered_question]
+            if positions:
+                identity = code or name
+                position = min(item for item in positions if item >= 0)
+                previous = matched_assets.get(identity)
+                if previous is None or position < previous[0]:
+                    matched_assets[identity] = (position, name, code)
+
+        ordered_matches = sorted(matched_assets.values(), key=lambda item: item[0])
+        if ordered_matches:
+            _, first_name, first_code = ordered_matches[0]
+            entities["name"] = first_name
+            if first_code:
+                entities["code"] = first_code
+            if len(ordered_matches) > 1:
+                entities["names"] = "|".join(item[1] for item in ordered_matches if item[1])
+                entities["codes"] = "|".join(item[2] for item in ordered_matches if item[2])
+                entities["asset_count"] = str(len(ordered_matches))
+                entities["asset_type"] = "ETF" if all("ETF" in item[1].upper() for item in ordered_matches) else "MULTI"
         return entities
 
     def _unknown_etf_name(self, question: str) -> str:

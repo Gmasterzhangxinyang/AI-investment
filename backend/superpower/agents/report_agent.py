@@ -40,7 +40,7 @@ class ReportAgent(SkillBackedAgent):
         produced_artifacts=("report_path", "dashboard_json_path", "market_indicators_json_path"),
         quality_gates=(
             "Excel 和 dashboard 必须来自同一批 context 产物",
-            "源文件、可转债和回测诊断必须进入报告",
+            "源文件、可转债和历史诊断必须进入报告",
             "AI研究委员会复核必须进入报告，但不得改变信号",
             "Agent 审计必须进入报告",
             "报告生成后由 audit_daily 独立重算校验",

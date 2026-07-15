@@ -11,7 +11,7 @@ if str(BACKEND) not in sys.path:
 from superpower.chat.orchestrator import ChatOrchestrator
 from superpower.chat.guardrails import ChatGuardrails
 from superpower.chat.router import ChatRouter
-from superpower.chat.schemas import ChatIntent, EvidencePack, ToolResult
+from superpower.chat.schemas import ChatIntent, ChatRequest, EvidencePack, ToolResult
 
 
 def test_router_resolves_etf_from_all_signals_before_parameter_questions() -> None:
@@ -51,6 +51,97 @@ def test_router_keeps_explicit_named_etf_signal_queries_scoped() -> None:
 
     assert ChatRouter().route("黄金ETF建仓候选", dashboard).name == "etf_entry"
     assert ChatRouter().route("黄金ETF平仓提示", dashboard).name == "etf_exit"
+
+
+def test_router_preserves_every_named_etf_in_multi_asset_question() -> None:
+    dashboard = {
+        "etf": {
+            "all_signals": [
+                {"name": "创新药ETF", "code": "159992.SZ", "asset_type": "ETF"},
+                {"name": "酒ETF", "code": "512690.SH", "asset_type": "ETF"},
+                {"name": "中证500ETF", "code": "510500.SH", "asset_type": "ETF"},
+            ]
+        }
+    }
+
+    intent = ChatRouter().route("看下酒etf、创新药etf和中证500etf有没有进入观测或者趋势确认", dashboard)
+
+    assert intent.name == "etf_detail"
+    assert intent.entities["codes"] == "512690.SH|159992.SZ|510500.SH"
+    assert intent.entities["names"] == "酒ETF|创新药ETF|中证500ETF"
+    assert intent.entities["asset_count"] == "3"
+    assert intent.entities["asset_type"] == "ETF"
+
+
+def test_multi_etf_answer_reports_each_asset_without_false_missing_evidence() -> None:
+    pack = EvidencePack(
+        report_date="20260715",
+        intent=ChatIntent(
+            "etf_detail",
+            0.94,
+            {
+                "codes": "512690.SH|159992.SZ|510500.SH",
+                "names": "酒ETF|创新药ETF|中证500ETF",
+            },
+        ),
+        rulebook=[],
+        tools=[
+            ToolResult(
+                tool="get_etf_multi_assets",
+                title="ETF multi-asset status",
+                source="dashboard.etf.all_signals",
+                summary="3只ETF",
+                data={
+                    "assets": [
+                        {
+                            "asset": {"name": "酒ETF", "code": "512690.SH"},
+                            "dashboard_signal": {
+                                "name": "酒ETF", "code": "512690.SH", "medium_status": "do_not_participate",
+                                "short_entry_status": "no_entry", "medium_reason": "中期趋势存在硬性否决条件",
+                                "rule_hits": "ma20_slope_down", "close": 0.416,
+                            },
+                        },
+                        {
+                            "asset": {"name": "创新药ETF", "code": "159992.SZ"},
+                            "dashboard_signal": {
+                                "name": "创新药ETF", "code": "159992.SZ", "medium_status": "trend_confirmed",
+                                "short_entry_status": "no_entry", "medium_reason": "中期趋势已确认", "close": 0.912,
+                            },
+                        },
+                        {
+                            "asset": {"name": "中证500ETF", "code": "510500.SH"},
+                            "dashboard_signal": {
+                                "name": "中证500ETF", "code": "510500.SH", "medium_status": "do_not_participate",
+                                "short_entry_status": "no_entry", "medium_reason": "中期趋势存在硬性否决条件",
+                                "rule_hits": "weekly_macd_green_widening", "close": 8.151,
+                            },
+                        },
+                    ]
+                },
+            )
+        ],
+    )
+
+    answer = ChatOrchestrator(ROOT)._deterministic_evidence_answer("三只ETF有没有进入观测或者趋势确认", pack)
+
+    assert "酒ETF（512690.SH）" in answer
+    assert "创新药ETF（159992.SZ）" in answer
+    assert "中证500ETF（510500.SH）" in answer
+    assert "趋势确认：创新药ETF" in answer
+    assert "尚未进入两种状态：酒ETF、中证500ETF" in answer
+    assert "缺少证据" not in answer
+
+
+def test_multi_etf_status_answer_stays_deterministic_when_llm_is_enabled() -> None:
+    orchestrator = ChatOrchestrator(ROOT)
+
+    use_llm = orchestrator._should_use_llm(
+        ChatRequest(question="对比三只ETF当前状态", allow_llm=True),
+        "截至 20260715，这几只 ETF 的状态如下：",
+        "etf_detail",
+    )
+
+    assert not use_llm
 
 
 def test_unknown_named_etf_routes_to_no_data_answer() -> None:

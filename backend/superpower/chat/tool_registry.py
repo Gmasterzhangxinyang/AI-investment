@@ -40,6 +40,11 @@ class ResearchToolRegistry:
             {"code": "ETF代码", "name": "ETF名称"},
         ),
         AgentToolSpec(
+            "etf_multi_assets",
+            "一次查询2至10只ETF的当前中期趋势、短期入场状态和最新关键指标",
+            {"codes": "用|分隔的ETF代码", "names": "用|分隔的ETF名称"},
+        ),
+        AgentToolSpec(
             "etf_strategy_comparison",
             "用最多400日历史运行单只ETF的原策略和2.0，返回当前判断对照",
             {"code": "ETF代码", "name": "ETF名称"},
@@ -91,6 +96,11 @@ class ResearchToolRegistry:
         if name == "etf_single_asset":
             code = self._required_code(entities, "ETF")
             return self.toolbox.get_etf_single_asset(code)
+        if name == "etf_multi_assets":
+            codes = args.get("codes") or entities.get("codes") or ""
+            if not codes:
+                raise ValueError("多ETF查询需要至少两个标的代码")
+            return self.toolbox.get_etf_multi_assets(codes)
         if name == "etf_strategy_comparison":
             if not entities.get("code") and not entities.get("name"):
                 raise ValueError("ETF双策略对照需要标的名称或代码")
@@ -109,7 +119,7 @@ class ResearchToolRegistry:
         raise ValueError(f"工具尚未实现：{name}")
 
     def _resolve_entities(self, arguments: dict[str, str]) -> dict[str, str]:
-        entities = {key: value for key, value in arguments.items() if key in {"code", "name"} and value}
+        entities = {key: value for key, value in arguments.items() if key in {"code", "name", "codes", "names"} and value}
         query = entities.get("code") or entities.get("name")
         if not query:
             return entities
@@ -148,7 +158,7 @@ class ResearchToolRegistry:
 
     def _clean_arguments(self, arguments: dict[str, Any]) -> dict[str, str]:
         cleaned: dict[str, str] = {}
-        for key in ("code", "name", "metric", "direction", "limit"):
+        for key in ("code", "name", "codes", "names", "metric", "direction", "limit"):
             value = arguments.get(key)
             if value is None:
                 continue

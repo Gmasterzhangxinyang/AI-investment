@@ -86,6 +86,7 @@ class ResearchAgentRuntime:
         "etf_signals",
         "etf_watchlist",
         "etf_single_asset",
+        "etf_multi_assets",
         "etf_strategy_comparison",
         "tl_state",
         "convertible_rankings",
@@ -475,7 +476,7 @@ class ResearchAgentRuntime:
             "output_schema": {
                 "action": "tool|clarify|finish",
                 "intent": "allowed intent",
-                "entities": {"code": "optional", "name": "optional", "asset_type": "optional", "metric": "optional"},
+                "entities": {"code": "optional", "name": "optional", "codes": "optional", "names": "optional", "asset_type": "optional", "metric": "optional"},
                 "tool": "required only for tool action",
                 "arguments": {},
                 "clarification_question": "required only for clarify action",
@@ -566,7 +567,7 @@ class ResearchAgentRuntime:
             raise ValueError("意图不在允许范围")
         entities = dict(current_intent.entities)
         raw_entities = payload.get("entities") if isinstance(payload.get("entities"), dict) else {}
-        for key in ("code", "name", "asset_type", "metric", "direction", "limit"):
+        for key in ("code", "name", "codes", "names", "asset_type", "metric", "direction", "limit"):
             value = raw_entities.get(key)
             if value is not None and str(value).strip():
                 entities[key] = str(value).strip()[:120]
@@ -623,7 +624,7 @@ class ResearchAgentRuntime:
         merged = {
             key: value
             for key, value in entities.items()
-            if key in {"code", "name", "metric", "direction", "limit"} and value
+            if key in {"code", "name", "codes", "names", "metric", "direction", "limit"} and value
         }
         merged.update(arguments)
         return merged

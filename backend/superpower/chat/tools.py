@@ -69,7 +69,9 @@ class ResearchToolbox:
                 self.get_etf_signals(intent.entities),
                 self.get_etf_watchlist(intent.entities),
             ]
-            if intent.name == "etf_detail" and intent.entities.get("code"):
+            if intent.name == "etf_detail" and intent.entities.get("codes"):
+                tools.append(self.get_etf_multi_assets(intent.entities["codes"]))
+            elif intent.name == "etf_detail" and intent.entities.get("code"):
                 tools.append(self.get_etf_single_asset(intent.entities["code"]))
             return tools
         if intent.name == "tl_timing":
@@ -592,6 +594,57 @@ class ResearchToolbox:
             },
         )
 
+    def get_etf_multi_assets(self, codes: str | list[str]) -> ToolResult:
+        requested = codes.split("|") if isinstance(codes, str) else list(codes)
+        requested = list(dict.fromkeys(str(code).strip().upper() for code in requested if str(code).strip()))[:10]
+        assets: list[dict[str, Any]] = []
+        for code in requested:
+            dashboard_signal = self._dashboard_etf_signal(code) or {}
+            asset = self.repository.resolve_asset(code) if self.repository is not None else None
+            latest_bar = (
+                self.repository.get_latest_market_bar(code) or self.repository.get_etf_latest_bar(code)
+                if self.repository is not None
+                else None
+            )
+            compact_asset = {
+                key: asset.get(key)
+                for key in ("code", "name", "asset_type")
+                if asset and key in asset
+            }
+            if not compact_asset:
+                compact_asset = {
+                    "code": dashboard_signal.get("code") or code,
+                    "name": dashboard_signal.get("name") or code,
+                    "asset_type": "ETF",
+                }
+            assets.append(
+                {
+                    "asset": compact_asset,
+                    "dashboard_signal": self._compact_etf_row(dashboard_signal),
+                    "latest_bar": self._compact_market_row(latest_bar or {}),
+                }
+            )
+        status_parts = []
+        for item in assets:
+            asset = item.get("asset") or {}
+            signal = item.get("dashboard_signal") or {}
+            status_parts.append(
+                f"{asset.get('name') or asset.get('code')}：中期{signal.get('medium_status') or '--'}，"
+                f"短期{signal.get('short_entry_status') or '--'}"
+            )
+        return ToolResult(
+            tool="get_etf_multi_assets",
+            title="ETF multi-asset status",
+            source="dashboard.etf.all_signals + sqlite.asset_master + sqlite.market_daily_indicators",
+            summary="；".join(status_parts) if status_parts else "没有找到所查询ETF的有效数据。",
+            data={
+                "requested_codes": requested,
+                "requested_count": len(requested),
+                "matched_count": sum(bool(item.get("dashboard_signal") or item.get("latest_bar")) for item in assets),
+                "assets": assets,
+            },
+        )
+
     def get_tl_state(self) -> ToolResult:
         rows = self.dashboard.get("tlToday", [])
         recent = self.dashboard.get("tlRecent", [])
@@ -745,8 +798,12 @@ class ResearchToolbox:
             "medium_reason": row.get("medium_reason"),
             "short_entry_status": row.get("short_entry_status"),
             "short_entry_reason": row.get("short_entry_reason"),
+            "rule_hits": row.get("rule_hits"),
+            "weekly_macd_state": row.get("weekly_macd_state"),
             "weekly_macd_confirmation_check": row.get("weekly_macd_confirmation_check"),
+            "ma20_slope_state": row.get("ma20_slope_state"),
             "ma20_flat_check": row.get("ma20_flat_check"),
+            "daily_macd_state": row.get("daily_macd_state"),
             "risk_overlay_level": row.get("risk_overlay_level"),
             "risk_overlay_summary": row.get("risk_overlay_summary"),
             "risk_overlay_flags": row.get("risk_overlay_flags"),

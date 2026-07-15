@@ -5,6 +5,7 @@ from pathlib import Path
 
 from superpower.db.connection import get_connection
 from superpower.db.migrations import ensure_database
+from superpower.runtime.artifact_store import atomic_write_text
 
 from .schemas import ChatTrace
 
@@ -17,9 +18,10 @@ class ChatTraceStore:
         trace_dir = self.root_dir / "outputs" / "latest" / "chat_traces"
         trace_dir.mkdir(parents=True, exist_ok=True)
         path = trace_dir / f"{trace.run_id}.json"
-        path.write_text(json.dumps(trace.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        content = json.dumps(trace.to_dict(), ensure_ascii=False, indent=2)
+        atomic_write_text(path, content)
         latest_path = trace_dir / "latest.json"
-        latest_path.write_text(json.dumps(trace.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_text(latest_path, content)
         self._save_to_database(trace)
         return path
 

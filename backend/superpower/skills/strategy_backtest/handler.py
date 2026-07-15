@@ -282,10 +282,10 @@ def _summary(
     buy_next_day_avg_return = float(buy_checks["next_day_return"].mean()) if buy_next_day_count else np.nan
     sell_next_day_avg_return = float(sell_checks["next_day_return"].mean()) if sell_next_day_count else np.nan
     history_level = "OK" if history_days >= 750 else "WARN"
-    history_note = "样本可用于初步回测" if history_days >= 750 else "历史不足，当前仅可做流程和信号频率诊断"
+    history_note = "样本可用于初步历史诊断" if history_days >= 750 else "历史不足，当前仅可做流程和信号频率诊断"
 
     rows = [
-        {"item": "ETF历史回测诊断标的数", "value": symbol_count, "level": "INFO", "note": "历史回测诊断不构成收益承诺"},
+        {"item": "ETF历史诊断标的数", "value": symbol_count, "level": "INFO", "note": "历史诊断不构成收益承诺，也不是完整组合回测"},
         {"item": "ETF历史交易日", "value": history_days, "level": history_level, "note": history_note},
         {"item": "ETF闭合交易次数", "value": trade_count, "level": "INFO", "note": "T日收盘后生成信号，T+1开盘模拟成交"},
         {"item": "ETF胜率", "value": win_rate, "level": "INFO", "note": ""},
