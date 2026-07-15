@@ -81,6 +81,8 @@ LLM usage is limited to:
 ai_research_committee
 research_explanation
 chat/orchestrator.py
+chat/agent_runtime.py
+chat/evidence_review.py
 ```
 
 ETF, TL, convertible bond ranking, QA, indicators, backtest, risk summary, and report generation are deterministic Python code.
@@ -95,6 +97,7 @@ context.py         shared artifact blackboard for one run
 orchestrator.py    sequential workflow runner
 skill_registry.py  loads skills by SKILL.md + handler.py
 audit_logger.py    writes JSONL agent audit logs
+artifact_store.py  atomic JSON writes and staged publication helpers
 ```
 
 ### backend/superpower/tools
@@ -131,13 +134,17 @@ Controlled AI chat layer:
 orchestrator.py
 router.py
 tools.py
+tool_registry.py
+access_policy.py
+agent_runtime.py
+evidence_review.py
 rulebook.py
 guardrails.py
 trace.py
 schemas.py
 ```
 
-The chat layer builds an evidence pack from dashboard JSON and SQLite, then asks the LLM to explain only that evidence.
+The chat layer has a rule fast lane, a focused AI lane, and a bounded ReAct deep lane. Every lane builds evidence from dashboard JSON and SQLite through read-only tools. The LLM can explain only that evidence.
 
 ### frontend
 

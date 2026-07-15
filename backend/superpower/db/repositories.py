@@ -61,6 +61,7 @@ class DatabaseRepository:
                 FROM chat_traces
                 """,
             )
+            research_coverage = self._research_coverage(connection)
         return {
             "dbPath": str(db_path),
             "exists": db_path.exists(),
@@ -72,7 +73,69 @@ class DatabaseRepository:
                 "latest": latest_chat,
                 "summary": chat_summary,
             },
+            "researchCoverage": research_coverage,
         }
+
+    def research_coverage(self) -> dict[str, Any]:
+        with get_connection(self.root_dir) as connection:
+            return self._research_coverage(connection)
+
+    def _research_coverage(self, connection: Any) -> dict[str, Any]:
+        coverage: dict[str, dict[str, Any]] = {
+            "ETF": {"assetCount": 0, "recordCount": 0, "startDate": None, "endDate": None},
+            "TL": {"assetCount": 0, "recordCount": 0, "startDate": None, "endDate": None},
+            "CONVERTIBLE": {"assetCount": 0, "recordCount": 0, "startDate": None, "endDate": None},
+        }
+        asset_rows = connection.execute(
+            """
+            SELECT asset_type, COUNT(*) AS asset_count
+            FROM asset_master
+            GROUP BY asset_type
+            """
+        ).fetchall()
+        for row in asset_rows:
+            asset_type = str(row["asset_type"])
+            if asset_type in coverage:
+                coverage[asset_type]["assetCount"] = int(row["asset_count"] or 0)
+
+        market_rows = connection.execute(
+            """
+            SELECT asset_type, COUNT(*) AS record_count,
+                   COUNT(DISTINCT code) AS asset_count,
+                   MIN(trade_date) AS start_date, MAX(trade_date) AS end_date
+            FROM market_daily_indicators
+            WHERE asset_type IN ('ETF', 'TL')
+            GROUP BY asset_type
+            """
+        ).fetchall()
+        for row in market_rows:
+            asset_type = str(row["asset_type"])
+            coverage[asset_type].update(
+                {
+                    "assetCount": int(row["asset_count"] or coverage[asset_type]["assetCount"]),
+                    "recordCount": int(row["record_count"] or 0),
+                    "startDate": row["start_date"],
+                    "endDate": row["end_date"],
+                }
+            )
+
+        cb_row = connection.execute(
+            """
+            SELECT COUNT(*) AS record_count, COUNT(DISTINCT bond_code) AS asset_count,
+                   MIN(report_date) AS start_date, MAX(report_date) AS end_date
+            FROM convertible_bond_snapshots
+            """
+        ).fetchone()
+        if cb_row:
+            coverage["CONVERTIBLE"].update(
+                {
+                    "assetCount": int(cb_row["asset_count"] or coverage["CONVERTIBLE"]["assetCount"]),
+                    "recordCount": int(cb_row["record_count"] or 0),
+                    "startDate": cb_row["start_date"],
+                    "endDate": cb_row["end_date"],
+                }
+            )
+        return coverage
 
     def latest_report_date(self) -> str | None:
         with get_connection(self.root_dir) as connection:

@@ -10,10 +10,26 @@ from .connection import get_connection
 from .migrations import ensure_database
 
 
-def ingest_dashboard(root_dir: Path, run_id: str, dashboard_path: Path) -> dict[str, Any]:
+def ingest_dashboard(
+    root_dir: Path,
+    run_id: str,
+    dashboard_path: Path,
+    *,
+    published_dashboard_path: Path | None = None,
+    published_report_path: Path | None = None,
+    published_market_indicators_path: Path | None = None,
+) -> dict[str, Any]:
     ensure_database(root_dir)
     backup_path = backup_database(root_dir)
     dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+    market_indicator_rows = _load_market_indicator_rows(dashboard)
+    stored_dashboard = dict(dashboard)
+    if published_report_path is not None:
+        stored_dashboard["reportPath"] = str(published_report_path)
+    if published_market_indicators_path is not None:
+        stored_dashboard["marketIndicatorsPath"] = str(published_market_indicators_path)
+    stored_dashboard_path = published_dashboard_path or dashboard_path
+    dashboard = stored_dashboard
     report_date = str(dashboard.get("reportDate") or "")
     if not report_date:
         raise ValueError("dashboard missing reportDate")
@@ -39,16 +55,16 @@ def ingest_dashboard(root_dir: Path, run_id: str, dashboard_path: Path) -> dict[
                 (
                     run_id,
                     normalized_report_date,
-                    str(dashboard_path),
+                    str(stored_dashboard_path),
                     str(dashboard.get("reportPath", "")),
                     now,
                     _json(dashboard.get("sourceManifest", [])),
                 ),
             )
             _upsert_assets(connection, dashboard, normalized_report_date)
-            _upsert_daily_report(connection, run_id, normalized_report_date, dashboard_path, dashboard)
+            _upsert_daily_report(connection, run_id, normalized_report_date, stored_dashboard_path, dashboard)
             _upsert_summary(connection, normalized_report_date, dashboard.get("summary", []))
-            _upsert_market_indicators(connection, _load_market_indicator_rows(dashboard))
+            _upsert_market_indicators(connection, market_indicator_rows)
             _upsert_etf_bars(connection, _etf_bar_rows(dashboard))
             _upsert_etf_signals(connection, dashboard)
             _upsert_tl_signals(connection, dashboard.get("tlToday", []) + dashboard.get("tlRecent", []))
@@ -86,7 +102,7 @@ def ingest_dashboard(root_dir: Path, run_id: str, dashboard_path: Path) -> dict[
                 (
                     run_id,
                     normalized_report_date,
-                    str(dashboard_path),
+                    str(stored_dashboard_path),
                     str(dashboard.get("reportPath", "")),
                     now,
                     datetime.now().isoformat(timespec="seconds"),

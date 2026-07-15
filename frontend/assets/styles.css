@@ -498,6 +498,28 @@ button.button {
   white-space: pre-wrap;
 }
 
+.refresh-diagnosis {
+  margin: 12px 0 10px;
+  padding: 12px 14px;
+  border: 1px solid #f0c9c4;
+  border-radius: 10px;
+  color: #7f1d1d;
+  background: #fff7f6;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.refresh-diagnosis strong,
+.refresh-diagnosis span {
+  display: block;
+}
+
+.refresh-diagnosis.is-success {
+  border-color: #b9ddca;
+  color: #166534;
+  background: #f3fbf6;
+}
+
 .card,
 .memo-shell,
 .command-panel,

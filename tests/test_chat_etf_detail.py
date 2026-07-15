@@ -24,6 +24,35 @@ def test_router_resolves_etf_from_all_signals_before_parameter_questions() -> No
     assert intent.entities["code"] == "512760.SH"
 
 
+def test_router_treats_bare_known_etf_name_as_single_asset_detail() -> None:
+    dashboard = {
+        "etf": {
+            "all_signals": [
+                {"name": "黄金ETF", "code": "159934.SZ", "asset_type": "ETF"},
+            ]
+        }
+    }
+
+    for question in ["etf黄金", "黄金etf", "黄金etf今天"]:
+        intent = ChatRouter().route(question, dashboard)
+        assert intent.name == "etf_detail"
+        assert intent.entities["name"] == "黄金ETF"
+        assert intent.entities["code"] == "159934.SZ"
+
+
+def test_router_keeps_explicit_named_etf_signal_queries_scoped() -> None:
+    dashboard = {
+        "etf": {
+            "all_signals": [
+                {"name": "黄金ETF", "code": "159934.SZ", "asset_type": "ETF"},
+            ]
+        }
+    }
+
+    assert ChatRouter().route("黄金ETF建仓候选", dashboard).name == "etf_entry"
+    assert ChatRouter().route("黄金ETF平仓提示", dashboard).name == "etf_exit"
+
+
 def test_unknown_named_etf_routes_to_no_data_answer() -> None:
     dashboard = {"etf": {"all_signals": [{"name": "芯片ETF", "code": "512760.SH"}]}}
 
@@ -144,3 +173,42 @@ def test_single_etf_answer_uses_rule_evidence_from_dashboard_signal() -> None:
     assert "风险辅助：MA20仍向下" in answer
     assert "不改变原策略评分和排名" in answer
     assert "来源：最新 dashboard.etf.all_signals" in answer
+
+
+def test_single_etf_close_question_returns_focused_fast_answer() -> None:
+    pack = EvidencePack(
+        report_date="2026-07-10",
+        intent=ChatIntent("etf_detail", 0.94, {"name": "黄金ETF", "code": "159934.SZ", "asset_type": "ETF"}),
+        rulebook=[],
+        tools=[
+            ToolResult(
+                tool="get_etf_single_asset",
+                title="ETF single asset",
+                source="dashboard.etf.all_signals",
+                summary="",
+                data={
+                    "asset": {"name": "黄金ETF", "code": "159934.SZ"},
+                    "dashboard_signal": {
+                        "date": "2026-07-03",
+                        "name": "黄金ETF",
+                        "code": "159934.SZ",
+                        "display_action": "未触发",
+                        "close": 9.056,
+                        "score": 47.37,
+                    },
+                    "latest_bar": {},
+                    "history": [
+                        {"trade_date": "2026-07-02", "close": 8.85},
+                        {"trade_date": "2026-07-03", "close": 9.056},
+                    ],
+                },
+            )
+        ],
+    )
+
+    answer = ChatOrchestrator(ROOT)._deterministic_evidence_answer("黄金ETF收盘价", pack)
+
+    assert "收盘价为 9.056" in answer
+    assert "最新有效交易日是 2026-07-03" in answer
+    assert "不是实时行情" in answer
+    assert "策略状态" not in answer

@@ -10,6 +10,9 @@
 - [ ] LLM provider unavailable does not block `--disable-llm` mode.
 - [ ] QA audit 非 PASS 默认不阻断日报生成。
 - [ ] `--strict-audit` 下 audit FAIL 会返回非 0。
+- [ ] 刷新期间反复读取 `outputs/latest/dashboard.json` 始终是合法完整 JSON。
+- [ ] 任一发布前阶段失败时，上一版 dashboard 和报告仍可使用。
+- [ ] 刷新失败能显示具体环节、影响和处理建议。
 
 ## Dashboard
 
@@ -76,3 +79,13 @@
 - [ ] No logs committed.
 - [ ] No `.env` committed.
 - [ ] No API key committed.
+
+## Chat
+
+- [ ] 明确的单标的名称默认进入单标的详情，不误路由为全市场建仓候选。
+- [ ] 收盘价、评分、量能、MACD 等明确指标走规则快速路径。
+- [ ] 页面展示窗口不限制问答后台的 30 日/400 日/前 30 只分析范围。
+- [ ] AI 关闭或失败时，规则支持的问题仍有确定性回答。
+- [ ] 日常解释使用 economy model；跨资产深度分析才使用完整 Agent。
+- [ ] AI 不能访问互联网、任意文件、SQL、写库、账户或下单接口。
+- [ ] 质检总数和提醒总数不因证据明细裁剪而减少。

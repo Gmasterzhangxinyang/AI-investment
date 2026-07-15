@@ -55,6 +55,32 @@ const refreshStepLabels = {
   "database-ingest": "写入本地数据库",
 };
 
+const chatAgentStepLabels = {
+  ChatRouterAgent: "识别问题",
+  ResearchPlannerAgent: "制定研究计划",
+  ResearchSupervisorAgent: "主Agent决策",
+  EvidenceReflectionAgent: "反思证据缺口",
+  ClarificationAgent: "补充必要条件",
+  ReadOnlyToolExecutor: "执行只读工具",
+  EvidenceAccuracyReviewer: "审查数据准确性",
+  AnswerEvidenceReviewer: "复核最终回答",
+  AgentEvidencePack: "整理证据包",
+  ResearchToolbox: "读取规则证据",
+  LLMAnswerAgent: "生成研究回答",
+  DeterministicAnswerAgent: "生成规则回答",
+  OutputGuardrail: "检查回答边界",
+};
+
+const chatAgentStatusLabels = {
+  success: "完成",
+  fallback: "回退",
+  blocked: "已阻止",
+  repaired: "已修正",
+  replan: "重新规划",
+  running: "运行中",
+  queued: "等待",
+};
+
 const integerParamPaths = new Set([
   "tl.daily_kdj_lookback",
   "tl.weekly_kdj_lookback",
@@ -873,7 +899,8 @@ function renderModelConfig() {
   const keyLine = config.api_key_configured
     ? `Key 已配置：${config.api_key_masked || "已遮挡"}`
     : "Key 未配置";
-  if (status) status.textContent = `当前 AI 智能问答：OpenAI · ${chatModel || "--"} · ${keyLine}`;
+  const fastModel = config.economy_model || chatModel || "--";
+  if (status) status.textContent = `当前 AI 智能问答：日常快速 ${fastModel} · 深度分析 ${chatModel || "--"} · ${keyLine}`;
   const keyStatusClass = state.openaiConnection === "ok" ? "is-ok" : state.openaiConnection === "warn" ? "is-warn" : "";
   const keyStatusText = state.openaiConnection === "ok"
     ? "连通正常"
@@ -994,7 +1021,9 @@ async function refreshData() {
     const result = await response.json();
     if (!response.ok || !["accepted", "success"].includes(result.status)) {
       const message = result.message || `HTTP ${response.status}`;
-      throw new Error(message);
+      const refreshError = new Error(message);
+      refreshError.refreshDiagnosis = result.diagnosis || null;
+      throw refreshError;
     }
     const job = result.job || {};
     state.refreshJobId = job.job_id;
@@ -1010,7 +1039,9 @@ async function refreshData() {
   } catch (error) {
     status.textContent = "刷新失败";
     status.classList.add("warn");
-    appendMessage("assistant", `刷新失败：${error.message}\n请确认 Excel 文件路径仍然有效。`, "System");
+    const diagnosis = error.refreshDiagnosis || error.refreshJob?.payload_json?.diagnosis || null;
+    showRefreshFailureDiagnosis(diagnosis, error.message);
+    appendMessage("assistant", refreshFailureMessage(diagnosis, error.message), "System");
   } finally {
     state.isRefreshing = false;
     button.disabled = false;
@@ -1033,7 +1064,10 @@ async function pollRefreshJob(jobId) {
     status.textContent = job.status === "running" ? "刷新中" : translateJobStatus(job.status || "queued");
     if (job.status === "success") return job;
     if (job.status === "failed") {
-      throw new Error(job.message || job.stderr_tail || "刷新任务失败");
+      const refreshError = new Error(job.message || job.stderr_tail || "刷新任务失败");
+      refreshError.refreshJob = job;
+      refreshError.refreshDiagnosis = job.payload_json?.diagnosis || null;
+      throw refreshError;
     }
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
@@ -1045,25 +1079,39 @@ function updateRefreshMonitor(job) {
   const stage = document.getElementById("refresh-stage");
   const percent = document.getElementById("refresh-percent");
   const fill = document.getElementById("refresh-bar-fill");
+  const diagnosisBox = document.getElementById("refresh-diagnosis");
   const log = document.getElementById("refresh-log");
-  if (!monitor || !stage || !percent || !fill || !log || !job) return;
+  if (!monitor || !stage || !percent || !fill || !diagnosisBox || !log || !job) return;
 
   monitor.hidden = false;
   const payload = job.payload_json || {};
   const progress = payload.lastProgress || {};
   const events = Array.isArray(payload.progressEvents) ? payload.progressEvents : [];
+  const diagnosis = payload.diagnosis || null;
+  const healthSummary = payload.healthSummary || null;
   const total = Number(progress.total || events.find((item) => item.total)?.total || 0);
   const index = Number(progress.index || 0);
   const computedPercent = total > 0 ? Math.min(100, Math.max(0, Math.round((index / total) * 100))) : 0;
   const statusText = translateJobStatus(job.status);
-  const agent = businessStepName(progress.agent) || "等待运行进度";
-  const message = job.message || progress.message || "--";
+  const agent = diagnosis?.failedStageLabel || businessStepName(progress.agent) || "等待运行进度";
+  const message = diagnosis?.issue || job.message || progress.message || "--";
 
   stage.textContent = `${statusText} · ${agent} · ${businessMessage(message)}`;
   percent.textContent = job.status === "success" ? "100%" : `${computedPercent}%`;
   percent.classList.toggle("ok", job.status === "success");
   percent.classList.toggle("warn", job.status === "failed");
   fill.style.width = job.status === "success" ? "100%" : `${computedPercent}%`;
+
+  diagnosisBox.hidden = true;
+  diagnosisBox.classList.remove("is-success");
+  diagnosisBox.innerHTML = "";
+  if (job.status === "failed") {
+    renderRefreshDiagnosis(diagnosisBox, diagnosis, job.message || "刷新任务失败");
+  } else if (job.status === "success" && healthSummary) {
+    diagnosisBox.hidden = false;
+    diagnosisBox.classList.add("is-success");
+    diagnosisBox.innerHTML = `<strong>刷新完成</strong><span>${escapeHtml(healthSummary.message || "新结果已通过校验并发布。")}</span>`;
+  }
 
   const visibleEvents = events.slice(-8).map((item) => {
     const mark = eventLabel(item.event);
@@ -1073,8 +1121,43 @@ function updateRefreshMonitor(job) {
   if (!visibleEvents.length) {
     visibleEvents.push(`${job.updated_at || "--"}  ${job.status || "--"}  ${job.message || "--"}`);
   }
-  if (job.stderr_tail) visibleEvents.push(`stderr: ${job.stderr_tail.slice(-500)}`);
   log.textContent = visibleEvents.join("\n");
+}
+
+function showRefreshFailureDiagnosis(diagnosis, fallbackMessage) {
+  const monitor = document.getElementById("refresh-monitor");
+  const diagnosisBox = document.getElementById("refresh-diagnosis");
+  if (!monitor || !diagnosisBox) return;
+  monitor.hidden = false;
+  renderRefreshDiagnosis(diagnosisBox, diagnosis, fallbackMessage);
+}
+
+function renderRefreshDiagnosis(container, diagnosis, fallbackMessage) {
+  const detail = diagnosis || {
+    failedStageLabel: "刷新运行服务",
+    issue: fallbackMessage || "刷新流程异常结束",
+    impact: "本次新结果未发布，页面继续使用上一次成功结果。",
+    actionHint: "请查看技术详情；若重复失败，请保留失败时间和任务编号进行排查。",
+  };
+  container.hidden = false;
+  container.classList.remove("is-success");
+  container.innerHTML = [
+    `<strong>失败环节：${escapeHtml(detail.failedStageLabel || "刷新运行服务")}</strong>`,
+    `<span>发现问题：${escapeHtml(detail.issue || fallbackMessage || "刷新流程异常结束")}</span>`,
+    `<span>当前影响：${escapeHtml(detail.impact || "本次新结果未发布，页面继续使用上一次成功结果。")}</span>`,
+    `<span>处理建议：${escapeHtml(detail.actionHint || "请查看技术详情后重试。")}</span>`,
+  ].join("");
+}
+
+function refreshFailureMessage(diagnosis, fallbackMessage) {
+  if (!diagnosis) {
+    return `刷新失败：${fallbackMessage || "刷新流程异常结束"}\n本次新结果未发布，页面继续使用上一次成功结果。请查看刷新进度中的处理建议。`;
+  }
+  return [
+    `刷新失败，问题出在：${diagnosis.failedStageLabel || "刷新运行服务"}`,
+    `当前影响：${diagnosis.impact || "本次新结果未发布，页面继续使用上一次成功结果。"}`,
+    `处理建议：${diagnosis.actionHint || "请查看技术详情后重试。"}`,
+  ].join("\n");
 }
 
 function businessStepName(agent) {
@@ -1355,6 +1438,27 @@ function renderContext(summary) {
     "系统运行记录",
   ];
   document.getElementById("context-sources").innerHTML = sources.map((item) => `<li>${item}</li>`).join("");
+
+  const access = state.dbStatus?.chatAccessScope || {};
+  const coverage = access.coverage || {};
+  const limits = access.limits || {};
+  const coverageLabel = (label, key) => {
+    const row = coverage[key] || {};
+    return `${label} ${row.assetCount ?? 0}只 · ${row.recordCount ?? 0}条 · ${row.startDate || "--"} 至 ${row.endDate || "--"}`;
+  };
+  const scopeItems = [
+    `Agent白名单 ${Array.isArray(access.agentTools) ? access.agentTools.length : 0} 个只读工具`,
+    coverageLabel("ETF", "ETF"),
+    coverageLabel("TL", "TL"),
+    coverageLabel("可转债", "CONVERTIBLE"),
+    limits.etf_detail || "ETF单标的最多读取最近30个交易日",
+    limits.etf_strategy_comparison || "双策略最多使用最近400个交易日计算",
+    limits.convertible_bond || "可转债单次最多读取30只排序记录",
+  ];
+  const scopeNode = document.getElementById("chat-access-scope");
+  if (scopeNode) scopeNode.innerHTML = scopeItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const policyNode = document.getElementById("model-policy");
+  if (policyNode) policyNode.textContent = access.architecture || "AI 不直连数据库，只读取后端提供的只读证据包。";
 }
 
 function renderKpis(summary) {
@@ -1790,13 +1894,15 @@ async function submitChat(question) {
   state.isChatting = true;
   let timeoutId = null;
   appendMessage("user", question, "");
-  const thinking = appendMessage("assistant", "正在由后端规则引擎读取最新投研证据。", "AI");
+  const thinking = appendMessage("assistant", "正在识别问题，并读取受控投研数据。", "AI");
   const liveStream = createThinkingStream(thinking, question);
   liveStream.start();
   renderAgentRuntime({
     steps: [
       { name: "ChatRouterAgent", status: "running", detail: "正在识别问题意图。" },
-      { name: "ResearchToolbox", status: "queued", detail: "等待工具调用。" },
+      { name: "ResearchSupervisorAgent", status: "queued", detail: "AI开启时将逐步选择只读工具。" },
+      { name: "EvidenceReflectionAgent", status: "queued", detail: "工具返回后检查是否还缺证据。" },
+      { name: "EvidenceAccuracyReviewer", status: "queued", detail: "等待数据准确性审查。" },
     ],
     evidence: [],
     traceId: "--",
@@ -1807,7 +1913,7 @@ async function submitChat(question) {
       const answer = [
         "现在这个页面是直接用 file:// 打开的，所以不能调用后端的 /api/chat，也就不会真正进入 AI 模型。",
         "",
-        "请先双击“启动AI投研.command”，然后从 http://127.0.0.1:8766/frontend/#chat 打开投研问答。这样 AI 智能问答才会读取本地数据库和 dashboard 证据包，再调用大模型组织回答。",
+        "请先双击“启动AI投研.command”，然后从 http://127.0.0.1:8771/frontend/index.html#chat 打开投研问答。这样 AI 智能问答才会读取本地数据库和 dashboard 证据包，再调用大模型组织回答。",
         "",
         "当前我不会把本地规则模板伪装成 AI 回答。"
       ].join("\n");
@@ -1822,7 +1928,7 @@ async function submitChat(question) {
     }
 
     const controller = new AbortController();
-    timeoutId = window.setTimeout(() => controller.abort(), 90000);
+    timeoutId = window.setTimeout(() => controller.abort(), 180000);
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1844,17 +1950,18 @@ async function submitChat(question) {
     liveStream.finish(result);
     await streamAnswer(thinking, result.answer);
     const isConversation = result.intent?.name === "conversation";
+    const isLightweight = ["conversation", "external_data_unavailable", "clarification"].includes(result.intent?.name);
     const isStrategyComparison = result.intent?.name === "etf_strategy_comparison";
-    thinking.querySelector(".message-body span").textContent = isConversation
-      ? "投研助手"
+    thinking.querySelector(".message-body span").textContent = isLightweight
+      ? (isConversation && !result.llmUsed ? "AI 未开启" : "投研助手")
       : isStrategyComparison
         ? "双策略对照 · 本地规则计算"
         : `Trace ${result.traceId} · ${result.intent?.name || "agent"} · ${result.llmModel || (result.llmUsed ? "llm" : "deterministic")}`;
-    if (!isConversation) attachAnalysisDetails(thinking, result, question);
+    if (!isLightweight) attachAnalysisDetails(thinking, result, question);
     renderAgentRuntime(result);
     rememberChatTurn(question, result, result.answer);
   } catch (error) {
-    const message = error.name === "AbortError" ? "请求超过 90 秒，已使用本地确定性摘要回答" : error.message;
+    const message = error.name === "AbortError" ? "请求超过 180 秒，已使用本地确定性摘要回答" : error.message;
     liveStream.error(message);
     await streamAnswer(thinking, localAnswer(question));
     thinking.querySelector(".message-body span").textContent = `来源：本地 dashboard 摘要 · ${message}`;
@@ -1887,8 +1994,8 @@ function renderAgentRuntime(result) {
         .map(
           (step) => `
             <div>
-              <span>${escapeHtml(step.status)}</span>
-              <strong>${escapeHtml(step.name)}</strong>
+              <span>${escapeHtml(chatAgentStatusLabels[step.status] || step.status)}</span>
+              <strong>${escapeHtml(chatAgentStepLabels[step.name] || step.name)}</strong>
               <small>${escapeHtml(step.detail || "")}</small>
             </div>
           `,
@@ -1917,11 +2024,11 @@ function createThinkingStream(article, question) {
   const log = document.getElementById("chat-log");
   const baseSteps = [
     ["接收问题", "已接收用户问题，准备进入受控投研链路。"],
-    ["识别意图", "判断是参数、ETF、TL、可转债、数据质量还是日报问题。"],
-    ["读取证据", "读取本地 dashboard、SQLite、策略参数和规则说明。"],
-    ["规则核对", "按系统规则核对字段，不新增交易信号。"],
-    ["生成回答", "组织成用户可读结论和证据说明。"],
-    ["输出校验", "检查是否误写买入、建仓、平仓或收益承诺。"],
+    ["制定计划", "AI开启时从白名单中选择需要的投研工具。"],
+    ["执行工具", "只读访问本地数据、策略参数和规则结果。"],
+    ["数据审查", "检查日期、数量、重复项、缺失字段和数据时效。"],
+    ["生成回答", "基于审查通过的证据组织研究结论。"],
+    ["边界校验", "检查是否误写信号、排名或收益承诺。"],
   ];
   if (!body) {
     return { start() {}, finish() {}, error() {} };
@@ -2017,8 +2124,10 @@ function initialAnalysisResult() {
     intent: { name: "classifying", confidence: 1 },
     steps: [
       { name: "ChatRouterAgent", status: "running", detail: "正在识别问题类型和可用数据权限。" },
-      { name: "ResearchToolbox", status: "queued", detail: "准备读取日报、数据库、策略规则和相关信号。" },
-      { name: "RuleCheck", status: "queued", detail: "将按系统规则核对 ETF、TL、可转债字段，不新增规则外判断。" },
+      { name: "ResearchSupervisorAgent", status: "queued", detail: "AI开启时将逐步选择白名单工具。" },
+      { name: "EvidenceReflectionAgent", status: "queued", detail: "检查证据是否足够回答。" },
+      { name: "ReadOnlyToolExecutor", status: "queued", detail: "准备读取日报、数据库、策略规则和相关信号。" },
+      { name: "EvidenceAccuracyReviewer", status: "queued", detail: "等待检查数据日期、数量、重复项和缺失字段。" },
       { name: "OutputGuardrail", status: "queued", detail: "等待最终回答后检查是否误写交易信号或收益承诺。" },
     ],
     evidence: [

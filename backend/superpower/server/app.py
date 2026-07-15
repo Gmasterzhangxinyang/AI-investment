@@ -20,7 +20,9 @@ from urllib.parse import parse_qs, quote, urlparse
 from uuid import uuid4
 
 from superpower.chat import ChatOrchestrator
+from superpower.chat.access_policy import chat_access_scope
 from superpower.chat.schemas import ChatRequest
+from superpower.chat.tool_registry import ResearchToolRegistry
 from superpower.db import DatabaseRepository
 from superpower.skills.ai_research_committee.handler import COMMITTEE_LLM_TIMEOUT_SECONDS, COMMITTEE_ROLES
 from superpower.skills.convertible_bond_ranking.registry import default_cb_registry
@@ -63,7 +65,13 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
             )
             return
         if path.startswith("/api/db/status"):
-            self._send_json(DatabaseRepository(self.root_dir).status())
+            repository = DatabaseRepository(self.root_dir)
+            status = repository.status()
+            status["chatAccessScope"] = chat_access_scope(status.get("researchCoverage"))
+            status["chatAccessScope"]["agentTools"] = [
+                {"name": item.name, "description": item.description} for item in ResearchToolRegistry.SPECS
+            ]
+            self._send_json(status)
             return
         if path.startswith("/api/refresh/job/"):
             job_id = path.rsplit("/", 1)[-1]
@@ -142,6 +150,11 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
                 {
                     "status": "failed",
                     "message": "All configured source Excel files are missing.",
+                    "diagnosis": _refresh_failure_diagnosis(
+                        [],
+                        "All configured source Excel files are missing.",
+                        fallback_stage="source-archive-agent",
+                    ),
                     "etfFile": str(self.etf_file),
                     "tlFile": str(self.tl_file),
                     "cbFile": str(self.cb_file) if self.cb_file else "",
@@ -256,6 +269,17 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
                 "stdout": stdout[-12000:],
                 "stderr": stderr[-12000:],
             }
+            if status == "success":
+                payload["healthSummary"] = {
+                    "checkedStages": len({str(item.get("agent") or "") for item in progress_events if item.get("agent")}),
+                    "newDataPublished": True,
+                    "message": "全部刷新环节已完成，新结果已通过校验并发布。",
+                }
+            else:
+                payload["diagnosis"] = _refresh_failure_diagnosis(
+                    progress_events,
+                    stderr[-2000:] or f"process exited with code {return_code}",
+                )
             repository.update_refresh_job(
                 job_id,
                 status=status,
@@ -283,6 +307,7 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
                         "timeout": 1800,
                         "lastProgress": progress_events[-1] if progress_events else None,
                         "progressEvents": progress_events[-80:],
+                        "diagnosis": _refresh_failure_diagnosis(progress_events, str(exc), timed_out=True),
                     },
                     ensure_ascii=False,
                 ),
@@ -301,6 +326,7 @@ class ResearchDashboardHandler(SimpleHTTPRequestHandler):
                         "error": str(exc),
                         "lastProgress": progress_events[-1] if progress_events else None,
                         "progressEvents": progress_events[-80:],
+                        "diagnosis": _refresh_failure_diagnosis(progress_events, str(exc)),
                     },
                     ensure_ascii=False,
                 ),
@@ -766,6 +792,63 @@ def _progress_message(progress: dict[str, Any]) -> str:
     if event == "workflow_failed":
         return f"Workflow failed at Agent {index}/{total}: {agent}"
     return f"Agent {index}/{total}: {agent}"
+
+
+_REFRESH_STAGE_DIAGNOSIS: dict[str, tuple[str, str]] = {
+    "config-agent": ("策略参数读取", "检查策略配置文件是否为有效 JSON，并确认参数没有缺失或写错。"),
+    "source-archive-agent": ("源文件检查", "确认 Wind Excel 文件仍在配置路径中，并且至少有一类源文件可读取。"),
+    "data-agent": ("Wind 数据读取", "检查 Excel 是否可打开、表头是否变化、公式是否已计算，并重新保存后再刷新。"),
+    "portfolio-agent": ("持仓状态读取", "检查 ETF 持仓文件或持仓字段格式；不确定时先核对代码和持仓状态列。"),
+    "qa-agent": ("输入数据校验", "打开系统状态里的数据检查明细，按提示修复日期、缺失值或字段异常。"),
+    "indicator-agent": ("技术指标计算", "检查历史交易日数量和价格、成交量字段是否完整，再重新刷新。"),
+    "etf-agent": ("ETF 策略计算", "检查 ETF 数据和策略参数；本次 ETF 新信号不会发布。"),
+    "tl-agent": ("TL 策略计算", "检查 TL 日线数据、份额字段和日期连续性；本次 TL 新状态不会发布。"),
+    "convertible-bond-agent": ("可转债筛选", "检查可转债源表字段、数值格式和策略参数；本次新排名不会发布。"),
+    "backtest-agent": ("历史诊断", "检查历史数据是否完整；可稍后重试，失败期间继续使用上一次成功结果。"),
+    "risk-agent": ("风险汇总", "检查上游 ETF、TL、可转债结果是否完整，再重新刷新。"),
+    "ai-research-committee-agent": ("审计摘要", "检查上游结果是否完整；该环节失败不会发布不完整的新结果。"),
+    "explanation-agent": ("文字说明生成", "检查上游字段是否完整；策略计算不会被 AI 改写。"),
+    "report-agent": ("日报生成", "检查输出目录是否可写、磁盘空间是否充足，再重新刷新。"),
+    "qa-audit": ("发布前一致性复核", "打开数据检查明细定位不一致项；复核通过前不会替换现有结果。"),
+    "database-ingest": ("本地数据库写入", "检查数据库文件是否可写和磁盘空间；页面仍保留上一版数据。"),
+}
+
+
+def _refresh_failure_diagnosis(
+    progress_events: list[dict[str, Any]],
+    error_message: str = "",
+    *,
+    timed_out: bool = False,
+    fallback_stage: str = "",
+) -> dict[str, Any]:
+    failed_event = next(
+        (
+            item
+            for item in reversed(progress_events)
+            if str(item.get("status") or "").lower() == "failed"
+            or str(item.get("event") or "").lower() in {"workflow_failed", "phase_failed", "agent_failed"}
+        ),
+        None,
+    )
+    progress = failed_event or (progress_events[-1] if progress_events else {})
+    stage = str(progress.get("agent") or fallback_stage or "refresh-runtime")
+    label, action = _REFRESH_STAGE_DIAGNOSIS.get(
+        stage,
+        ("刷新运行服务", "查看技术详情中的错误信息；若重复失败，请保留失败时间和任务编号进行排查。"),
+    )
+    if timed_out:
+        action = f"该环节运行超过30分钟。{action}"
+    issue = str(progress.get("message") or "").strip()
+    if not issue or issue.lower() in {"running", "refresh failed"}:
+        issue = str(error_message or "刷新流程异常结束").strip().splitlines()[-1][:300]
+    return {
+        "failedStage": stage,
+        "failedStageLabel": label,
+        "issue": issue,
+        "impact": "本次新结果未发布，ETF、TL、可转债页面继续使用上一次成功结果。",
+        "oldDataRetained": True,
+        "actionHint": action,
+    }
 
 
 def _run_id_from_audit_path(audit_path: str) -> str:

@@ -31,6 +31,15 @@
 9. QA audit 稳定。
    默认 audit 非 PASS 只写入 `outputs/latest/audit.json` 和 `dashboard.run_info.warnings`；只有 `--strict-audit` 会让 audit 非 PASS 返回非 0。
 
+10. 原子发布。
+    日更先写 staging，完成 QA audit 和 SQLite ingest 后再发布；`dashboard.json` 最后切换。失败时保留上一版完整结果。
+
+11. 刷新故障自诊断。
+    刷新任务记录具体失败阶段、影响范围、旧数据保留状态和处理建议，前端不再对所有错误统一提示“检查 Excel 路径”。
+
+12. 问答分层。
+    规则查数走快速路径；普通解释走 economy model；只有跨资产或不明确问题进入受控 ReAct。白名单工具和证据复核不因加速而取消。
+
 ## 验收命令
 
 ```bash

@@ -40,6 +40,71 @@ def test_router_handles_greetings_and_etf_metric_rankings() -> None:
     ambiguous = router.route("查下最高的ETF", {})
     assert ambiguous.name == "etf_ranking"
     assert ambiguous.entities["metric"] == ""
+    natural_ambiguous = router.route("最好的ETF", {})
+    assert natural_ambiguous.name == "etf_ranking"
+    assert natural_ambiguous.entities["metric"] == ""
+    assert router.route("你能读取多少数据，最新到哪天？", {}).name == "chat_data_scope"
+    assert router.route("可转债第20名为什么没有进入Top10？", {}).name == "convertible_bond"
+
+
+def test_router_understands_generic_and_named_dual_etf_strategy_comparison() -> None:
+    router = ChatRouter()
+
+    assert router.route("ETF双策略比较", {}).name == "strategy_comparison"
+    dashboard = {"etf": {"all_signals": [{"name": "黄金ETF", "code": "159934.SZ"}]}}
+    named = router.route("黄金ETF双策略比较", dashboard)
+    assert named.name == "etf_strategy_comparison"
+    assert named.entities["code"] == "159934.SZ"
+
+
+def test_router_keeps_casual_chat_and_external_news_out_of_daily_report() -> None:
+    router = ChatRouter()
+    orchestrator = ChatOrchestrator(ROOT)
+
+    for question in ("你在干啥", "？", "说话"):
+        intent = router.route(question, {})
+        assert intent.name == "conversation"
+        pack = EvidencePack(report_date="2026-07-10", intent=intent, rulebook=[], tools=[])
+        answer = orchestrator._deterministic_evidence_answer(question, pack)
+        assert "日报日期" not in answer
+        assert answer == ""
+        assert "AI自然对话尚未开启" in orchestrator._fallback_answer(question, pack, "llm_disabled_by_user")
+        assert orchestrator._should_use_llm(ChatRequest(question, allow_llm=True), answer, intent.name) is True
+        assert orchestrator._should_use_llm(ChatRequest(question, allow_llm=False), answer, intent.name) is False
+
+    news_intent = router.route("最好的新闻", {})
+    assert news_intent.name == "external_data_unavailable"
+    news_pack = EvidencePack(report_date="2026-07-10", intent=news_intent, rulebook=[], tools=[])
+    news_answer = orchestrator._deterministic_evidence_answer("最好的新闻", news_pack)
+    assert "没有接入新闻" in news_answer
+    assert "日报日期" not in news_answer
+
+    unknown_intent = router.route("随便说点什么", {})
+    assert unknown_intent.name == "clarification"
+    unknown_pack = EvidencePack(report_date="2026-07-10", intent=unknown_intent, rulebook=[], tools=[])
+    assert "没理解" in orchestrator._deterministic_evidence_answer("随便说点什么", unknown_pack)
+
+
+def test_chat_data_scope_is_deterministic_and_reports_exact_limits() -> None:
+    class ScopeRepository:
+        def research_coverage(self):
+            return {
+                "ETF": {"assetCount": 30, "recordCount": 39579, "startDate": "2020-01-02", "endDate": "2026-07-03"},
+                "TL": {"assetCount": 1, "recordCount": 779, "startDate": "2023-04-21", "endDate": "2026-07-10"},
+                "CONVERTIBLE": {"assetCount": 307, "recordCount": 614, "startDate": "2026-07-06", "endDate": "2026-07-10"},
+            }
+
+    intent = ChatRouter().route("AI问答能访问多少数据？", {})
+    assert intent.name == "chat_data_scope"
+    tools = ResearchToolbox({}, ScopeRepository()).collect(intent)
+    pack = EvidencePack(report_date="2026-07-10", intent=intent, rulebook=[], tools=tools)
+    answer = ChatOrchestrator(ROOT)._deterministic_evidence_answer("AI问答能访问多少数据？", pack)
+
+    assert "ETF：30只，39579条记录，2020-01-02 至 2026-07-03" in answer
+    assert "最近30个交易日" in answer
+    assert "最近400个交易日" in answer
+    assert "AI不会直接访问整个数据库" in answer
+    assert ChatOrchestrator(ROOT)._should_use_llm(ChatRequest("AI问答能访问多少数据？", allow_llm=True), answer, intent.name) is False
 
 
 def test_etf_ranking_uses_full_dashboard_and_answers_directly() -> None:
@@ -75,7 +140,7 @@ def test_ambiguous_etf_ranking_asks_for_a_metric() -> None:
     )
 
     answer = ChatOrchestrator(ROOT)._deterministic_evidence_answer("查下最高的ETF", pack)
-    assert "还缺少比较指标" in answer
+    assert "没有唯一的“最好”" in answer
     assert "强弱分" in answer and "收盘价" in answer
 
 
@@ -127,7 +192,15 @@ def test_named_etf_two_strategy_question_runs_both_plugins(tmp_path: Path) -> No
         ChatRequest("为什么测试ETF不好，根据两个策略分析", allow_llm=True),
         answer,
         "etf_strategy_comparison",
-    ) is False
+        agent_planned=True,
+    ) is True
+
+
+def test_absolute_return_request_is_blocked_deterministically() -> None:
+    answer = ChatOrchestrator(ROOT)._deterministic_compliance_answer("给我一个保证绝对收益的ETF买法")
+
+    assert "不能保证赚钱" in answer
+    assert "不能承诺收益" in answer
 
 
 def test_rule_contract_follows_active_etf_strategy(tmp_path: Path) -> None:
@@ -184,6 +257,39 @@ def test_evidence_planner_keeps_convertible_question_compact() -> None:
 
     assert "get_research_snapshot" not in [tool.tool for tool in tools]
     assert payload_chars < 30_000
+
+
+def test_chat_analysis_range_is_independent_from_page_display_range() -> None:
+    class AnalysisRepository:
+        def get_market_history(self, code: str, limit: int = 30):
+            assert code == "TL.CFE"
+            assert limit == 30
+            return [{"trade_date": f"2026-06-{index:02d}", "code": code, "close": index} for index in range(1, 31)]
+
+        def get_convertible_rankings(self, limit: int = 30):
+            assert limit == 30
+            return [
+                {"bond_name": f"测试转债{index}", "bond_code": f"11{index:04d}.SH", "rank": index, "score": 100 - index}
+                for index in range(1, 31)
+            ]
+
+    dashboard = {
+        "tlToday": [{"state": "观望"}],
+        "tlRecent": [{"date": f"2026-07-{index:02d}", "state": "观望"} for index in range(1, 13)],
+        "convertible_bond": {
+            "top10": [{"bond_name": f"页面转债{index}", "bond_code": f"12{index:04d}.SH"} for index in range(1, 11)],
+            "summary": {},
+        },
+    }
+    toolbox = ResearchToolbox(dashboard, AnalysisRepository())
+
+    tl = toolbox.get_tl_state().data
+    convertible = toolbox.get_convertible_top10().data
+
+    assert len(tl["recent"]) == 8
+    assert len(tl["history"]) == 30
+    assert len(convertible["top10"]) == 10
+    assert len(convertible["analysis_universe"]) == 30
 
 
 def test_convertible_evidence_keeps_all_four_dynamic_factors() -> None:

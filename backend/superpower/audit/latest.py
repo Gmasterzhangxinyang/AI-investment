@@ -24,6 +24,7 @@ from superpower.tools.excel_reader import (
     parse_wind_wide_excel,
 )
 from superpower.tools.report_date import report_date_text
+from superpower.runtime.artifact_store import atomic_write_text
 
 
 FLOAT_TOLERANCE = 1e-8
@@ -52,10 +53,19 @@ def main() -> None:
         raise SystemExit(1)
 
 
-def audit_latest(root_dir: Path, etf_file: Path, tl_file: Path, cb_file: Path | None = None) -> dict[str, Any]:
+def audit_latest(
+    root_dir: Path,
+    etf_file: Path,
+    tl_file: Path,
+    cb_file: Path | None = None,
+    *,
+    dashboard_path: Path | None = None,
+    audit_path: Path | None = None,
+) -> dict[str, Any]:
     output_dir = root_dir / "outputs"
     latest_dir = output_dir / "latest"
-    dashboard_path = latest_dir / "dashboard.json"
+    dashboard_path = dashboard_path or latest_dir / "dashboard.json"
+    audit_path = audit_path or latest_dir / "audit.json"
     params_path = root_dir / "configs" / "strategy_params.json"
     positions_path = root_dir / "configs" / "positions.csv"
 
@@ -112,8 +122,7 @@ def audit_latest(root_dir: Path, etf_file: Path, tl_file: Path, cb_file: Path | 
             "reportDate": report_date,
         },
     }
-    latest_dir.mkdir(parents=True, exist_ok=True)
-    (latest_dir / "audit.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_text(audit_path, json.dumps(payload, ensure_ascii=False, indent=2))
     return payload
 
 

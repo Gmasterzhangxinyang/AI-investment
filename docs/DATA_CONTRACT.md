@@ -209,3 +209,11 @@ quality_notes
 ```
 
 `convertible_bond.top10` is a compatibility field and must contain only `qualified[:10]`; weak-watch and risk-watch rows are not used to fill the Top table.
+
+## Publish Contract
+
+`outputs/latest/dashboard.json` is the public commit marker for one completed refresh. New artifacts are generated under `outputs/.staging/<run_id>` and validated there. Public report, market indicators and audit files are copied atomically; `dashboard.json` is published last.
+
+Consumers therefore see either the previous complete run or the new complete run. A failed refresh must not change the public dashboard contract.
+
+Refresh job payloads may include `lastProgress`, `progressEvents`, `healthSummary` and a `diagnosis` object with failed stage, issue, impact, old-data retention and action hint fields.

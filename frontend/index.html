@@ -60,6 +60,7 @@
             <span id="refresh-percent" class="status-pill">0%</span>
           </div>
           <div class="refresh-bar" aria-hidden="true"><span id="refresh-bar-fill"></span></div>
+          <div id="refresh-diagnosis" class="refresh-diagnosis" hidden></div>
           <div id="refresh-log" class="refresh-log">暂无运行日志</div>
         </section>
 
@@ -134,8 +135,11 @@
                 <ul id="context-sources"></ul>
               </div>
               <div class="source-box">
-                <h4>模型边界</h4>
-                <p id="model-policy">信号由代码生成，AI 只解释和复核。</p>
+                <h4>问答数据边界</h4>
+                <ul id="chat-access-scope">
+                  <li>正在读取本地数据范围。</li>
+                </ul>
+                <p id="model-policy">AI 不直连数据库，只读取后端提供的只读证据包。</p>
               </div>
             </aside>
           </div>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from superpower.audit.latest import audit_latest
 from superpower.db import ingest_dashboard
 from superpower.runtime import AgentContext, AgentOrchestrator, SkillRegistry
 from superpower.runtime.audit_logger import AuditLogger
+from superpower.runtime.artifact_store import atomic_copy_file, atomic_write_text
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,6 +42,8 @@ def main() -> None:
     output_dir = args.output_dir or root_dir / "outputs"
     log_dir = args.log_dir or root_dir / "logs"
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    staging_dir = output_dir / ".staging" / run_id
+    staging_dir.mkdir(parents=True, exist_ok=True)
     cb_file = args.cb_file or _configured_cb_file(root_dir)
 
     context = AgentContext(run_id=run_id, root_dir=root_dir)
@@ -53,6 +57,8 @@ def main() -> None:
     context.put("disable_llm", args.disable_llm)
     context.put("delivery_file", root_dir / "configs" / "delivery.json")
     context.put("output_dir", output_dir)
+    context.put("latest_work_dir", staging_dir)
+    context.put("report_work_dir", staging_dir)
     context.put("skill_registry", SkillRegistry(root_dir / "backend" / "superpower" / "skills"))
 
     workflow_result = AgentOrchestrator(build_daily_workflow(), progress_callback=_emit_progress).run(context)
@@ -61,33 +67,82 @@ def main() -> None:
     print(f"status={workflow_result.status}", flush=True)
     print(f"message={workflow_result.message}", flush=True)
     print(f"audit={audit_path}", flush=True)
-    if context.maybe("report_path"):
-        print(f"report={context.get('report_path')}", flush=True)
-    if context.maybe("dashboard_json_path"):
-        print(f"dashboard_json={context.get('dashboard_json_path')}", flush=True)
-
     if workflow_result.status == "failed":
         raise SystemExit(1)
 
+    staged_dashboard_path = Path(context.get("dashboard_json_path"))
+    staged_report_path = Path(context.get("report_path"))
+    staged_market_path = Path(context.get("market_indicators_json_path"))
+    staged_audit_path = staging_dir / "audit.json"
+    public_latest_dir = output_dir / "latest"
+    public_dashboard_path = public_latest_dir / "dashboard.json"
+    public_market_path = public_latest_dir / "market_indicators.json"
+    public_audit_path = public_latest_dir / "audit.json"
+    public_report_path = output_dir / staged_report_path.name
+
     if not args.skip_audit:
         _emit_phase("phase_started", 15, 16, "qa-audit", "Run independent report audit.", "Running QA audit")
-        qa_result = _run_latest_audit(root_dir, args.etf_file, args.tl_file, cb_file)
+        qa_result = _run_latest_audit(
+            root_dir,
+            args.etf_file,
+            args.tl_file,
+            cb_file,
+            dashboard_path=staged_dashboard_path,
+            audit_path=staged_audit_path,
+        )
         _emit_phase("phase_finished", 15, 16, "qa-audit", "Run independent report audit.", qa_result["status"])
         print(f"qa_status={qa_result['status']}", flush=True)
-        print(f"qa_report={root_dir / 'outputs' / 'latest' / 'audit.json'}", flush=True)
+        print(f"qa_report={public_audit_path}", flush=True)
         if context.maybe("dashboard_json_path"):
             _append_audit_warnings(Path(context.get("dashboard_json_path")), qa_result)
         if _audit_requires_exit(qa_result, args.strict_audit):
             raise SystemExit(1)
+    else:
+        atomic_write_text(
+            staged_audit_path,
+            json.dumps(
+                {
+                    "status": "SKIPPED",
+                    "checks": [],
+                    "source": {"dashboardPath": str(staged_dashboard_path)},
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
 
     if context.maybe("dashboard_json_path"):
         _emit_phase("phase_started", 16, 16, "database-ingest", "Persist dashboard output into SQLite.", "Writing SQLite")
-        ingest_result = ingest_dashboard(root_dir, run_id, Path(context.get("dashboard_json_path")))
+        ingest_result = ingest_dashboard(
+            root_dir,
+            run_id,
+            staged_dashboard_path,
+            published_dashboard_path=public_dashboard_path,
+            published_report_path=public_report_path,
+            published_market_indicators_path=public_market_path,
+        )
         _emit_phase("phase_finished", 16, 16, "database-ingest", "Persist dashboard output into SQLite.", ingest_result["status"])
         print(f"db_status={ingest_result['status']}", flush=True)
         print(f"db_path={ingest_result['dbPath']}", flush=True)
         if ingest_result.get("backupPath"):
             print(f"db_backup={ingest_result['backupPath']}", flush=True)
+
+    _publish_latest_snapshot(
+        staged_dashboard_path=staged_dashboard_path,
+        staged_report_path=staged_report_path,
+        staged_market_path=staged_market_path,
+        staged_audit_path=staged_audit_path,
+        public_dashboard_path=public_dashboard_path,
+        public_report_path=public_report_path,
+        public_market_path=public_market_path,
+        public_audit_path=public_audit_path,
+    )
+    shutil.rmtree(staging_dir, ignore_errors=True)
+    context.put("dashboard_json_path", public_dashboard_path)
+    context.put("report_path", public_report_path)
+    context.put("market_indicators_json_path", public_market_path)
+    print(f"report={public_report_path}", flush=True)
+    print(f"dashboard_json={public_dashboard_path}", flush=True)
 
 
 def _configured_cb_file(root_dir: Path) -> Path | None:
@@ -104,9 +159,24 @@ def _resolve_config_path(root_dir: Path, path: Path) -> Path:
     return expanded if expanded.is_absolute() else root_dir / expanded
 
 
-def _run_latest_audit(root_dir: Path, etf_file: Path, tl_file: Path, cb_file: Path | None) -> dict[str, object]:
+def _run_latest_audit(
+    root_dir: Path,
+    etf_file: Path,
+    tl_file: Path,
+    cb_file: Path | None,
+    *,
+    dashboard_path: Path,
+    audit_path: Path,
+) -> dict[str, object]:
     try:
-        return audit_latest(root_dir, etf_file, tl_file, cb_file)
+        return audit_latest(
+            root_dir,
+            etf_file,
+            tl_file,
+            cb_file,
+            dashboard_path=dashboard_path,
+            audit_path=audit_path,
+        )
     except Exception as exc:
         payload: dict[str, object] = {
             "status": "FAIL",
@@ -123,9 +193,7 @@ def _run_latest_audit(root_dir: Path, etf_file: Path, tl_file: Path, cb_file: Pa
                 "cbFile": str(cb_file) if cb_file else "",
             },
         }
-        latest_dir = root_dir / "outputs" / "latest"
-        latest_dir.mkdir(parents=True, exist_ok=True)
-        (latest_dir / "audit.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_text(audit_path, json.dumps(payload, ensure_ascii=False, indent=2))
         return payload
 
 
@@ -148,7 +216,41 @@ def _append_audit_warnings(dashboard_path: Path, qa_result: dict[str, object]) -
         warnings.extend(failed_checks)
         run_info["status"] = "partial_success"
     run_info["warnings"] = warnings
-    dashboard_path.write_text(json.dumps(dashboard, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    atomic_write_text(dashboard_path, json.dumps(dashboard, ensure_ascii=False, indent=2, default=str))
+
+
+def _publish_latest_snapshot(
+    *,
+    staged_dashboard_path: Path,
+    staged_report_path: Path,
+    staged_market_path: Path,
+    staged_audit_path: Path | None,
+    public_dashboard_path: Path,
+    public_report_path: Path,
+    public_market_path: Path,
+    public_audit_path: Path,
+) -> None:
+    """Publish a fully generated refresh; dashboard is switched last."""
+    dashboard = json.loads(staged_dashboard_path.read_text(encoding="utf-8"))
+    market_payload = json.loads(staged_market_path.read_text(encoding="utf-8"))
+    if not isinstance(dashboard, dict) or not isinstance(market_payload, dict):
+        raise ValueError("Refresh staging payload is not a JSON object")
+    if staged_audit_path is not None:
+        audit_payload = json.loads(staged_audit_path.read_text(encoding="utf-8"))
+        if not isinstance(audit_payload, dict):
+            raise ValueError("Refresh audit payload is not a JSON object")
+
+    atomic_copy_file(staged_report_path, public_report_path)
+    atomic_copy_file(staged_market_path, public_market_path)
+    if staged_audit_path is not None:
+        atomic_copy_file(staged_audit_path, public_audit_path)
+
+    dashboard["reportPath"] = str(public_report_path)
+    dashboard["marketIndicatorsPath"] = str(public_market_path)
+    atomic_write_text(
+        public_dashboard_path,
+        json.dumps(dashboard, ensure_ascii=False, indent=2, default=str),
+    )
 
 
 def _audit_requires_exit(qa_result: dict[str, object], strict_audit: bool) -> bool:

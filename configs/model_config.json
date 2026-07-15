@@ -7,7 +7,7 @@
   "api_key_env": "OPENAI_API_KEY",
   "chat": {
     "provider": "openai",
-    "primary_model": "gpt-5-codex",
+    "primary_model": "gpt-5",
     "llm_enabled": true,
     "opencode": {
       "base_url": "http://127.0.0.1:4096",

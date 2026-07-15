@@ -16,8 +16,27 @@ class ChatRouter:
         if self._is_conversation(question):
             return ChatIntent("conversation", 0.99, {})
 
+        if self._asks_external_data(question):
+            return ChatIntent("external_data_unavailable", 0.99, {})
+
+        if self._asks_chat_data_scope(question):
+            return ChatIntent("chat_data_scope", 0.99, {})
+
+        mentioned_asset_groups = sum(
+            [
+                "etf" in text,
+                any(token in text for token in ["tl", "国债", "30年", "三十年"]),
+                any(token in text for token in ["可转债", "转债", "convertible", "cb"]),
+            ]
+        )
+        if mentioned_asset_groups >= 2 and any(token in text for token in ["风险", "风控", "综合", "整体", "跨资产"]):
+            return ChatIntent("risk_review", 0.97, entities)
+
         if self._asks_etf_strategy_comparison(question, entities):
             return ChatIntent("etf_strategy_comparison", 0.98, entities)
+
+        if self._asks_generic_etf_strategy_comparison(question):
+            return ChatIntent("strategy_comparison", 0.97, entities)
 
         if (
             any(token in text for token in ["原策略", "2.0", "v2", "趋势回踩"])
@@ -35,11 +54,25 @@ class ChatRouter:
         if ranking_entities is not None:
             return ChatIntent("etf_ranking", 0.96, {**entities, **ranking_entities})
 
+        if "etf" in text and not (entities.get("code") or entities.get("name")):
+            if any(token in text for token in ["建仓候选", "买入候选", "买入信号"]):
+                return ChatIntent("etf_entry", 0.97, entities)
+            if any(token in text for token in ["平仓提示", "平仓信号", "卖出提示", "卖出信号"]):
+                return ChatIntent("etf_exit", 0.97, entities)
+
+        if any(token in text for token in ["可转债", "转债", "convertible", "cb"]):
+            ranking_or_detail = ["第", "排名", "排行", "top", "前十", "前10", "没进", "未进", "没入选", "为什么"]
+            if any(token in text for token in ranking_or_detail):
+                return ChatIntent("convertible_bond", 0.96, entities)
+
         if (entities.get("code") or entities.get("name")) and "etf" in text:
-            if any(token in text for token in ["状态", "怎么样", "如何", "哪里", "问题", "量能", "趋势", "原因", "为什么", "触发", "分析", "解释"]):
-                return ChatIntent("etf_detail", 0.94, entities)
+            if any(token in text for token in ["平仓提示", "平仓信号", "卖出提示", "卖出信号"]):
+                return ChatIntent("etf_exit", 0.97, entities)
+            if any(token in text for token in ["建仓候选", "买入候选", "买入信号"]):
+                return ChatIntent("etf_entry", 0.97, entities)
+            return ChatIntent("etf_detail", 0.94, entities)
         unknown_etf_name = self._unknown_etf_name(question)
-        if unknown_etf_name and any(token in text for token in ["状态", "怎么样", "如何", "哪里", "问题", "量能", "趋势", "原因", "为什么", "触发", "分析", "解释"]):
+        if unknown_etf_name and any(token in text for token in ["今天", "状态", "怎么样", "如何", "哪里", "问题", "量能", "趋势", "原因", "为什么", "触发", "分析", "解释"]):
             return ChatIntent("etf_detail", 0.91, {"name": unknown_etf_name, "asset_type": "ETF", "not_found": "true"})
         if any(token in text for token in ["数据库", "db", "sqlite"]):
             if any(token in text for token in ["标的", "名字", "名称", "名单", "有啥", "有什么", "所有", "列表", "列出"]):
@@ -75,10 +108,12 @@ class ChatRouter:
             if any(token in text for token in ["平仓", "卖出"]):
                 return ChatIntent("etf_exit", 0.9, entities)
             return ChatIntent("etf_entry", 0.9, entities)
-        return ChatIntent("daily_report", 0.62, entities)
+        return ChatIntent("clarification", 0.62, entities)
 
     def _is_conversation(self, question: str) -> bool:
         normalized = re.sub(r"[\s，。！？!?、~～]+", "", question).lower()
+        if question.strip() and not normalized:
+            return True
         return normalized in {
             "你好",
             "你好呀",
@@ -90,13 +125,54 @@ class ChatRouter:
             "在吗",
             "谢谢",
             "谢谢你",
+            "你在干啥",
+            "你在干嘛",
+            "你在干什么",
+            "你在做什么",
+            "你是干嘛的",
+            "你是谁",
+            "说话",
+            "回话",
+            "怎么不说话",
+            "啥情况",
         }
+
+    def _asks_external_data(self, question: str) -> bool:
+        text = question.lower().replace(" ", "")
+        return any(token in text for token in ["新闻", "资讯", "快讯", "热搜", "实时消息", "最新消息"])
+
+    def _asks_chat_data_scope(self, question: str) -> bool:
+        text = question.lower().replace(" ", "")
+        explicit_phrases = [
+            "能访问多少数据",
+            "可以访问多少数据",
+            "能读取多少数据",
+            "可以读取多少数据",
+            "读取多少数据",
+            "能查多久",
+            "可以查多久",
+            "能查哪些数据",
+            "可以查哪些数据",
+            "问答数据范围",
+            "问答数据权限",
+            "ai数据范围",
+            "ai数据权限",
+            "数据访问范围",
+        ]
+        if any(phrase in text for phrase in explicit_phrases):
+            return True
+        asks_scope = any(token in text for token in ["范围", "权限", "多久", "多少", "哪些"])
+        mentions_chat = any(token in text for token in ["ai", "问答", "模型", "聊天"])
+        mentions_data = any(token in text for token in ["数据", "历史", "数据库"])
+        asks_latest_boundary = mentions_data and any(token in text for token in ["最新到哪天", "最新到哪一天", "最新日期", "数据到哪天"])
+        return asks_latest_boundary or (asks_scope and mentions_chat and mentions_data)
 
     def _asks_etf_strategy_comparison(self, question: str, entities: dict[str, str]) -> bool:
         text = question.lower().replace(" ", "")
         if "etf" not in text or not (entities.get("code") or entities.get("name")):
             return False
         comparison_tokens = [
+            "双策略",
             "两个策略",
             "两套策略",
             "两个etf策略",
@@ -108,11 +184,34 @@ class ChatRouter:
         ]
         return any(token in text for token in comparison_tokens)
 
+    def _asks_generic_etf_strategy_comparison(self, question: str) -> bool:
+        text = question.lower().replace(" ", "")
+        if "etf" not in text:
+            return False
+        comparison_tokens = ["双策略", "两个策略", "两套策略", "策略对比", "策略比较", "原策略和2.0", "原策略与2.0"]
+        return any(token in text for token in comparison_tokens)
+
     def _etf_ranking_entities(self, question: str) -> dict[str, str] | None:
         text = question.lower().replace(" ", "")
         if "etf" not in text:
             return None
-        ranking_tokens = ["最高", "最低", "最大", "最小", "最强", "最弱", "排名", "排行", "第一", "top", "前几", "前十", "前10"]
+        ranking_tokens = [
+            "最高",
+            "最低",
+            "最大",
+            "最小",
+            "最强",
+            "最弱",
+            "最好",
+            "最佳",
+            "排名",
+            "排行",
+            "第一",
+            "top",
+            "前几",
+            "前十",
+            "前10",
+        ]
         if not any(token in text for token in ranking_tokens):
             return None
 
@@ -149,6 +248,15 @@ class ChatRouter:
         for row in universe:
             name = str(row.get("name") or row.get("bond_name") or "")
             code = str(row.get("code") or row.get("bond_code") or "")
+            row_type = str(row.get("asset_type") or "").upper()
+            asks_etf = "etf" in question.lower()
+            asks_convertible = "可转债" in question or "转债" in question
+            is_convertible = row_type == "CONVERTIBLE" or name.endswith("转债") or bool(row.get("bond_code"))
+            is_etf = row_type == "ETF" or "ETF" in name.upper()
+            if asks_etf and is_convertible:
+                continue
+            if asks_convertible and is_etf:
+                continue
             aliases = {name}
             if name.endswith("ETF"):
                 aliases.add(name.removesuffix("ETF"))

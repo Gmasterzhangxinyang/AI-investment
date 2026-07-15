@@ -43,6 +43,19 @@ Large-model usage is intentionally limited to the review and language layer.
 - If the API key is missing or the request fails, the system falls back to deterministic commentary and records the reason in Agent Audit.
 - All strategy Agents are deterministic. This is intentional: LLM is a reporting/research language layer, not a trading decision engine.
 
+## Interactive Research Agent
+
+The frontend chat has a separate bounded runtime from the daily workflow:
+
+- clear factual questions use deterministic tools and do not need a model call;
+- focused explanation uses the configured economy model after deterministic tools assemble evidence;
+- cross-asset or ambiguous questions may use `ResearchAgentRuntime`, a bounded ReAct supervisor;
+- the supervisor has at most 8 iterations, 5 read-only tool calls, and 2 reflection passes;
+- every tool result is checked by `EvidenceAccuracyReviewer` before it can support an answer;
+- deep final answers are reviewed again, while all answers pass deterministic output guardrails.
+
+This runtime cannot call refresh, write files, write SQLite, browse the web, access accounts, or place orders.
+
 ## Evidence Review Layer
 
 `AIResearchCommitteeAgent` runs constrained review roles when LLM is enabled, and deterministic fallback commentary when it is not. This layer is an evidence review and language layer, not a signal generator.

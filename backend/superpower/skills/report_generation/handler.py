@@ -17,8 +17,10 @@ from superpower.utils.text_safety import DISCLAIMER, sanitize_dashboard, sanitiz
 class Skill:
     def run(self, context: AgentContext) -> dict[str, object]:
         output_dir = context.get("output_dir")
-        latest_dir = output_dir / "latest"
+        latest_dir = context.maybe("latest_work_dir", output_dir / "latest")
+        report_dir = context.maybe("report_work_dir", output_dir)
         latest_dir.mkdir(parents=True, exist_ok=True)
+        report_dir.mkdir(parents=True, exist_ok=True)
 
         etf_buys = context.get("etf_buy_candidates")
         etf_sells = context.get("etf_sell_alerts")
@@ -56,7 +58,7 @@ class Skill:
 
         report_date = _report_date(context)
         dashboard = _dashboard_frame(report_date, etf_buys, etf_watchlist, etf_sells, tl_today, cb_top10, backtest_summary, quality, llm_usage)
-        report_path = output_dir / f"AI投研日报-Superpower-{report_date}.xlsx"
+        report_path = report_dir / f"AI投研日报-Superpower-{report_date}.xlsx"
         workbook_sheets = {
             "今日总览": dashboard,
             "AI解释": research_summary,

@@ -117,26 +117,26 @@
     "linkage_overlay": {
       "enabled": true,
       "validation_tolerance": 0.05,
-      "stock_strong_threshold": 3.0,
-      "stock_weak_threshold": -3.0,
-      "bond_strong_threshold": 3.0,
-      "bond_weak_threshold": -2.0,
-      "relative_gap_threshold": 2.0,
-      "premium_expand_threshold": 2.0,
-      "premium_compress_threshold": -2.0
+      "stock_strong_threshold": 3,
+      "stock_weak_threshold": -3,
+      "bond_strong_threshold": 3,
+      "bond_weak_threshold": -2,
+      "relative_gap_threshold": 2,
+      "premium_expand_threshold": 2,
+      "premium_compress_threshold": -2
     },
     "dynamic_scoring": {
       "validation_tolerance": 0.05,
-      "stock_strong_threshold": 3.0,
-      "stock_weak_threshold": -3.0,
-      "bond_strong_threshold": 3.0,
-      "bond_weak_threshold": -2.0,
-      "relative_gap_threshold": 2.0,
-      "premium_expand_threshold": 2.0,
-      "premium_compress_threshold": -2.0,
-      "return_score_range": 5.0,
-      "relative_score_range": 4.0,
-      "premium_change_score_range": 4.0,
+      "stock_strong_threshold": 3,
+      "stock_weak_threshold": -3,
+      "bond_strong_threshold": 3,
+      "bond_weak_threshold": -2,
+      "relative_gap_threshold": 2,
+      "premium_expand_threshold": 2,
+      "premium_compress_threshold": -2,
+      "return_score_range": 5,
+      "relative_score_range": 4,
+      "premium_change_score_range": 4,
       "component_weights": {
         "stock": 0.2,
         "bond": 0.15,
@@ -152,6 +152,12 @@
       "credit": 0.15,
       "redemption": 0.1,
       "scale": 0.05
+    },
+    "base_strategy": "legacy_v1",
+    "auxiliary_overlay": {
+      "enabled": true,
+      "overlay_id": "dynamic_v2",
+      "settings": {}
     }
   },
   "risk": {

@@ -16,6 +16,27 @@ from superpower.tools.excel_reader import parse_convertible_bond_excel
 from superpower.tools.frame import records
 
 from .schemas import ChatIntent, ToolResult
+from .access_policy import (
+    AGENT_AUDIT_ROWS,
+    AI_COMMITTEE_ROWS,
+    CB_ANALYSIS_UNIVERSE_ROWS,
+    CB_BUCKET_EVIDENCE_ROWS,
+    CB_RANKING_QUERY_ROWS,
+    DAILY_SUMMARY_ROWS,
+    DATA_QUALITY_ROWS,
+    ETF_DETAIL_HISTORY_ROWS,
+    ETF_DIAGNOSTIC_ROWS,
+    ETF_DUAL_STRATEGY_HISTORY_ROWS,
+    ETF_LEGACY_HISTORY_ROWS,
+    ETF_SIGNAL_ROWS_PER_BUCKET,
+    ETF_WATCH_ROWS,
+    RISK_SUMMARY_ROWS,
+    SOURCE_MANIFEST_ROWS,
+    TL_ANALYSIS_HISTORY_ROWS,
+    TL_BACKEND_HISTORY_ROWS,
+    TL_DISPLAY_HISTORY_ROWS,
+    chat_access_scope,
+)
 from .strategy_knowledge import build_rule_contract
 
 
@@ -27,8 +48,10 @@ class ResearchToolbox:
         self.repository = repository
 
     def collect(self, intent: ChatIntent) -> list[ToolResult]:
-        if intent.name == "conversation":
+        if intent.name in {"conversation", "external_data_unavailable", "clarification"}:
             return []
+        if intent.name == "chat_data_scope":
+            return [self.get_chat_data_scope()]
         if intent.name == "etf_ranking":
             return [self.get_etf_ranking(intent.entities)]
         if intent.name == "etf_strategy_comparison":
@@ -66,7 +89,7 @@ class ResearchToolbox:
             tools.extend([self.get_etf_signals(intent.entities), self.get_etf_watchlist(intent.entities)])
         if intent.name in {"tl_timing", "daily_report", "risk_review"}:
             tools.append(self.get_tl_state())
-        if intent.name in {"convertible_bond", "daily_report"}:
+        if intent.name in {"convertible_bond", "daily_report", "risk_review"}:
             tools.append(self.get_convertible_top10())
         if intent.name == "convertible_bond" and intent.entities.get("code"):
             tools.append(self.get_convertible_detail(intent.entities["code"]))
@@ -140,6 +163,17 @@ class ResearchToolbox:
                     "可以解释规则、指出缺口、给出人工复核清单，但不能新增交易信号。",
                 ],
             },
+        )
+
+    def get_chat_data_scope(self) -> ToolResult:
+        coverage = self.repository.research_coverage() if self.repository is not None else {}
+        policy = chat_access_scope(coverage)
+        return ToolResult(
+            tool="get_chat_data_scope",
+            title="AI问答数据权限",
+            source="chat.access_policy + sqlite research coverage",
+            summary="AI 不直接访问数据库，只能读取后端白名单工具生成的裁剪证据包。",
+            data=policy,
         )
 
     def get_research_snapshot(self) -> ToolResult:
@@ -251,7 +285,7 @@ class ResearchToolbox:
                 )
                 if key in row
             }
-            for row in diagnostics[:60]
+            for row in diagnostics[:ETF_DIAGNOSTIC_ROWS]
         ]
         return ToolResult(
             tool="get_strategy_diagnostics",
@@ -301,7 +335,7 @@ class ResearchToolbox:
             title="Daily summary",
             source=f"dashboard.summary[{report_date}]",
             summary=f"日报日期 {report_date}，摘要指标 {len(rows)} 项。",
-            data=rows[:24],
+            data=rows[:DAILY_SUMMARY_ROWS],
         )
 
     def _load_strategy_params(self) -> dict[str, Any]:
@@ -332,11 +366,11 @@ class ResearchToolbox:
         data = {
             "buy_candidates": [
                 self._compact_etf_row(row)
-                for row in self._filter_rows(self.dashboard.get("etfBuyCandidates", []), entities)[:12]
+                for row in self._filter_rows(self.dashboard.get("etfBuyCandidates", []), entities)[:ETF_SIGNAL_ROWS_PER_BUCKET]
             ],
             "sell_alerts": [
                 self._compact_etf_row(row)
-                for row in self._filter_rows(self.dashboard.get("etfSellAlerts", []), entities)[:12]
+                for row in self._filter_rows(self.dashboard.get("etfSellAlerts", []), entities)[:ETF_SIGNAL_ROWS_PER_BUCKET]
             ],
         }
         return ToolResult(
@@ -356,8 +390,8 @@ class ResearchToolbox:
             source="dashboard.etfWatchlist + dashboard.etfDetailHistory",
             summary=f"ETF 关注池 {len(rows)} 条，匹配历史 {len(history)} 条。",
             data={
-                "watchlist": [self._compact_etf_row(row) for row in rows[:12]],
-                "history": [self._compact_etf_row(row) for row in history[-12:]],
+                "watchlist": [self._compact_etf_row(row) for row in rows[:ETF_WATCH_ROWS]],
+                "history": [self._compact_etf_row(row) for row in history[-ETF_WATCH_ROWS:]],
             },
         )
 
@@ -417,7 +451,7 @@ class ResearchToolbox:
         if not code:
             return self._etf_comparison_unavailable(code, name, "没有识别到 ETF 代码")
 
-        rows = self.repository.get_market_history(code, limit=400)
+        rows = self.repository.get_market_history(code, limit=ETF_DUAL_STRATEGY_HISTORY_ROWS)
         if not rows:
             return self._etf_comparison_unavailable(code, name, "SQLite 没有该 ETF 的日频历史")
         if not name:
@@ -532,7 +566,9 @@ class ResearchToolbox:
         asset = self.repository.resolve_asset(code)
         latest_bar = self.repository.get_latest_market_bar(code) or self.repository.get_etf_latest_bar(code)
         signals = self.repository.get_etf_signals(code, latest_bar.get("trade_date") if latest_bar else None)
-        history = self.repository.get_market_history(code, limit=30) or self.repository.get_etf_history(code, limit=8)
+        history = self.repository.get_market_history(code, limit=ETF_DETAIL_HISTORY_ROWS) or self.repository.get_etf_history(
+            code, limit=ETF_LEGACY_HISTORY_ROWS
+        )
         if latest_bar is None:
             summary = f"SQLite 未找到 {code} 的 ETF 日频指标。"
         else:
@@ -552,7 +588,7 @@ class ResearchToolbox:
                 "dashboard_signal": self._compact_etf_row(dashboard_signal or {}),
                 "latest_bar": self._compact_market_row(latest_bar or {}),
                 "signals": [self._compact_etf_row(row) for row in signals[:8]],
-                "history": [self._compact_market_row(row) for row in history[:30]],
+                "history": [self._compact_market_row(row) for row in history[:ETF_DETAIL_HISTORY_ROWS]],
             },
         )
 
@@ -561,7 +597,7 @@ class ResearchToolbox:
         recent = self.dashboard.get("tlRecent", [])
         history = []
         if self.repository is not None:
-            history = self.repository.get_market_history("TL.CFE", limit=30)
+            history = self.repository.get_market_history("TL.CFE", limit=TL_BACKEND_HISTORY_ROWS)
         state = rows[0].get("state", "--") if rows else "--"
         return ToolResult(
             tool="get_tl_state",
@@ -570,8 +606,8 @@ class ResearchToolbox:
             summary=f"TL 当前状态 {state}。",
             data={
                 "today": [self._compact_tl_row(row) for row in rows[:1]],
-                "recent": [self._compact_tl_row(row) for row in recent[:8]],
-                "history": [self._compact_market_row(row) for row in history[:8]],
+                "recent": [self._compact_tl_row(row) for row in recent[:TL_DISPLAY_HISTORY_ROWS]],
+                "history": [self._compact_market_row(row) for row in history[:TL_ANALYSIS_HISTORY_ROWS]],
             },
         )
 
@@ -579,7 +615,7 @@ class ResearchToolbox:
         cb = self.dashboard.get("convertible_bond") or {}
         rows = cb.get("top10") or self.dashboard.get("cbTop10", [])
         summary = cb.get("summary") or {}
-        ranked = self.repository.get_convertible_rankings(limit=30) if self.repository is not None else []
+        ranked = self.repository.get_convertible_rankings(limit=CB_RANKING_QUERY_ROWS) if self.repository is not None else []
         raw_rows = self._agent_metric("convertible-bond-agent", "metric_cb_rows")
         candidates = self._agent_metric("convertible-bond-agent", "metric_cb_candidates")
         top10_count = self._agent_metric("convertible-bond-agent", "metric_cb_top10")
@@ -595,16 +631,17 @@ class ResearchToolbox:
                 f"{quality_message}"
             ),
             data={
+                "as_of": (ranked[0].get("report_date") if ranked else self.dashboard.get("reportDate")),
                 "raw_rows": raw_rows,
                 "ranked_candidates": candidates if candidates is not None else len(ranked),
                 "top10_count": top10_count if top10_count is not None else len(rows),
                 "database_ranked_count": len(ranked),
-                "top10": [self._compact_cb_row(row) for row in rows[:10]],
-                "qualified": [self._compact_cb_row(row) for row in (cb.get("qualified") or rows)[:10]],
-                "weak_watch": [self._compact_cb_row(row) for row in (cb.get("weak_watch") or [])[:10]],
-                "risk_watch": [self._compact_cb_row(row) for row in (cb.get("risk_watch") or [])[:10]],
+                "top10": [self._compact_cb_row(row) for row in rows[:CB_BUCKET_EVIDENCE_ROWS]],
+                "qualified": [self._compact_cb_row(row) for row in (cb.get("qualified") or rows)[:CB_BUCKET_EVIDENCE_ROWS]],
+                "weak_watch": [self._compact_cb_row(row) for row in (cb.get("weak_watch") or [])[:CB_BUCKET_EVIDENCE_ROWS]],
+                "risk_watch": [self._compact_cb_row(row) for row in (cb.get("risk_watch") or [])[:CB_BUCKET_EVIDENCE_ROWS]],
                 "summary": summary,
-                "ranked_sample": [self._compact_cb_row(row) for row in ranked[:10]],
+                "analysis_universe": [self._compact_cb_row(row) for row in ranked[:CB_ANALYSIS_UNIVERSE_ROWS]],
             },
         )
 
@@ -638,7 +675,13 @@ class ResearchToolbox:
             title="Data quality",
             source="dashboard.dataQuality + dashboard.sourceManifest",
             summary=f"数据质检 {len(rows)} 项，其中需关注 {len(warn_rows)} 项。",
-            data={"quality": rows[:50], "manifest": self.dashboard.get("sourceManifest", [])[:20]},
+            data={
+                "quality": rows[:DATA_QUALITY_ROWS],
+                "total_count": len(rows),
+                "warning_count": len(warn_rows),
+                "warning_rows": warn_rows[:DATA_QUALITY_ROWS],
+                "manifest": self.dashboard.get("sourceManifest", [])[:SOURCE_MANIFEST_ROWS],
+            },
         )
 
     def get_agent_audit(self) -> ToolResult:
@@ -648,7 +691,10 @@ class ResearchToolbox:
             title="Agent audit",
             source="dashboard.agentAudit + dashboard.aiCommitteeReviews",
             summary=f"Agent 审计 {len(rows)} 项。",
-            data={"agent_audit": rows[:30], "ai_committee": self.dashboard.get("aiCommitteeReviews", [])[:4]},
+            data={
+                "agent_audit": rows[:AGENT_AUDIT_ROWS],
+                "ai_committee": self.dashboard.get("aiCommitteeReviews", [])[:AI_COMMITTEE_ROWS],
+            },
         )
 
     def get_risk_summary(self) -> ToolResult:
@@ -658,7 +704,7 @@ class ResearchToolbox:
             title="Risk summary",
             source="dashboard.riskSummary",
             summary=f"风控摘要 {len(rows)} 项。",
-            data=rows[:20],
+            data=rows[:RISK_SUMMARY_ROWS],
         )
 
     def _compact_etf_row(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -711,6 +757,7 @@ class ResearchToolbox:
 
     def _compact_cb_row(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
+            "rank": row.get("rank"),
             "name": row.get("name") or row.get("bond_name"),
             "code": row.get("code") or row.get("bond_code"),
             "qualification": row.get("qualification"),
@@ -772,9 +819,26 @@ class ResearchToolbox:
             "fund_flow_relation",
             "fund_flow_note",
             "fund_flow_data_quality",
+            "rule_hits",
             "risk_notes",
         )
-        return {key: row.get(key) for key in keys if key in row}
+        compact = {key: row.get(key) for key in keys if key in row}
+        compact.update(
+            {
+                "close": row.get("close", row.get("收盘价")),
+                "ma5": row.get("ma5"),
+                "ma10": row.get("ma10"),
+                "ma20": row.get("ma20"),
+                "ma60": row.get("ma60"),
+                "vol_ratio60": row.get("vol_ratio60"),
+                "macd_hist": row.get("macd_hist"),
+                "kdj_j": row.get("kdj_j"),
+                "week_macd_hist": row.get("week_macd_hist"),
+                "week_kdj_j": row.get("week_kdj_j"),
+                "metrics": row.get("metrics") if isinstance(row.get("metrics"), dict) else {},
+            }
+        )
+        return compact
 
     def _compact_market_row(self, row: dict[str, Any]) -> dict[str, Any]:
         keys = ("trade_date", "date", "name", "code", "close", "ma5", "ma10", "ma20", "ma60", "vol_ratio60", "macd_hist", "dif", "dea", "kdj_j")
