@@ -1,5 +1,7 @@
 # Convertible Bond Dynamic Strategy v2 Implementation Plan
 
+> 历史实施记录：本文保留当时的设计、测试步骤和 rollout 假设，不代表当前默认配置。当前运行口径请看 [当前系统事实清单](../../CURRENT_SYSTEM.md) 和 configs/strategy_params.json。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make `dynamic_v2` the default selectable convertible-bond strategy, combine the unchanged base-quality score with a validated short-term dynamic score, and keep `legacy_v1` available as an exact fallback.

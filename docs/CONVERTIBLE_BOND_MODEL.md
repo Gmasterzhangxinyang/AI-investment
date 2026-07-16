@@ -2,6 +2,17 @@
 
 本文档描述当前系统可转债板块的风险过滤、打分模型和候选资格分层逻辑。可转债排序由确定性规则生成，AI 只解释原因，不改写排名。
 
+## 当前插件结构
+
+当前配置为 `active_strategy=dynamic_v2`，但实现不是把动态分直接混入最终分，而是清晰的两层架构：
+
+| 层 | 插件 | 权限 |
+| --- | --- | --- |
+| 基础决策层 | `legacy_v1` 1.0.0 | 决定硬排除、`base_score`、基础等级、资格、动作和最终排名。 |
+| 短期辅助层 | `dynamic_v2` 2.0.0 | 读取四项日频联动字段，输出辅助分、状态、说明和数据质量；不改变基础决策。 |
+
+当前代码保持 `score = base_score`。配置中的 `base_weight=0.8`、`dynamic_weight=0.2` 是插件配置元数据，尚未合成为最终排名分，不能把页面上的动态辅助理解为新总分。
+
 ## 1. 输入数据
 
 可转债模块读取本地可转债 Excel 模板。
@@ -62,6 +73,7 @@ if abs(percent_field).quantile(0.75) <= 1.5 and max(abs(percent_field)) <= 5:
   -> 候选资格分层
   -> 合格候选中做行业分散
   -> Top候选
+  -> dynamic_v2 四项短期辅助说明（不重排）
 ```
 
 ## 3. 关键参数
@@ -82,7 +94,27 @@ max_per_industry_l2 = 2
 no_redemption_valid_days = 180
 exclude_st_stock = true
 exclude_unresolved_redemption_trigger = true
+active_strategy = dynamic_v2
+base_strategy = legacy_v1
+auxiliary_overlay.enabled = true
 ```
+
+## 3.1 dynamic_v2 四项输入
+
+- `stock_daily_return`：正股当日涨跌。
+- `bond_daily_return`：转债当日涨跌。
+- `previous_conversion_premium_rate`：前一日转股溢价率。
+- `conversion_premium_change`：当日转股溢价率变化。
+
+主要辅助状态：
+
+- `关注补涨`：正股偏强、转债跟涨不足且溢价收缩。
+- `谨慎追涨`：转债相对正股领先且溢价扩大。
+- `联动走弱`：正股与转债同步明显走弱。
+- `正常联动`：未出现需要额外提示的异常关系。
+- `数据不足`：四项输入不完整或变化关系无法核验。
+
+辅助层只用于收盘后复盘和下一交易日人工参考。它不会改变 `excluded_reason`、`base_score`、`base_grade`、`qualification`、`eligible_for_top`、`action`、`score` 或 `rank`。
 
 评级硬排除列表：
 

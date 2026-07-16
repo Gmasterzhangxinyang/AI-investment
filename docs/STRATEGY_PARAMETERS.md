@@ -13,6 +13,8 @@
 
 `etf.active_strategy` 选择实时 ETF 策略；`etf.diagnostic_strategies` 只控制历史表现对比，不会改变实时信号。每套策略的参数保存在 `etf.strategy_profiles.<strategy_id>`，未启用配置也会保留。
 
+当前值：`etf.active_strategy = trend_pullback_v2`；`diagnostic_strategies = [legacy_v1, trend_pullback_v2]`。
+
 趋势回踩策略的客户核心规则：MA5 已在 MA10 上方且日 MACD 绿柱缩小或转红时列入密切观察，同时提示周 MACD 是否绿柱缩短/红柱加长，以及 MA20 是否走平。中期确认后仍需突破或缩量回踩承接；过热巨量长阳不追。
 
 | 参数 | 当前值 | 前端名称 | 含义 | 调大影响 | 调小影响 | 建议 |
@@ -25,11 +27,31 @@
 | `etf.score_weights.volume` | 0.25 | 量能权重 | ETF 排序里量能确认的权重。 | 更偏好放量标的。 | 放量不足的标的更容易靠趋势入选。 | 0.2-0.3。 |
 | `etf.score_weights.share_change` | 0.15 | 份额变化权重 | ETF 排序里基金份额变化的辅助权重。当前数据不足时影响较弱。 | 更关注资金流入/份额变化。 | 更偏纯技术。 | 后续若 Wind 补充份额数据，可再提高。 |
 
+趋势回踩 v2 专属参数（下表路径均相对于 `etf.strategy_profiles.trend_pullback_v2`）：
+
+| 参数 | 当前值 | 含义 | 调大影响 | 调小影响 |
+| --- | ---: | --- | --- | --- |
+| `medium_trend.minimum_history_rows` | 180 | 运行中期/周线判断所需历史长度。 | 要求更多历史，数据不足状态增加。 | 更早给状态，但稳定性下降。 |
+| `medium_trend.ma20_slope_lookback` | 5 | MA20 斜率回看日数。 | 更平滑。 | 更敏感。 |
+| `medium_trend.ma20_flat_tolerance` | 0.003 | MA20 近似走平容忍度。 | 更容易认定走平。 | 趋势确认更严格。 |
+| `short_entry.confirmation_window` | 3 | 趋势确认后的短期确认窗口。 | 等待时间更长。 | 更强调立即确认。 |
+| `short_entry.overheat_daily_return_min` | 0.04 | 过热单日涨幅阈值。 | 更少判过热。 | 更严格防追涨。 |
+| `short_entry.overheat_body_ratio_min` | 0.60 | 过热阳线实体占振幅阈值。 | 更少判过热。 | 更容易触发。 |
+| `short_entry.overheat_volume_ratio_min` | 1.8 | 过热量能倍数。 | 更少判过热。 | 更容易拦截放量长阳。 |
+| `short_entry.overheat_ma5_distance_min` | 0.03 | 收盘高于 MA5 的过热偏离。 | 允许更大偏离。 | 更早提示不追涨。 |
+| `short_entry.overheat_cooldown_days` | 3 | 过热冷却日数。 | 等待更久。 | 更快重新评估。 |
+| `short_entry.pullback_support_tolerance` | 0.005 | 回踩支撑容忍度。 | 回踩确认更宽松。 | 更严格。 |
+| `short_entry.pullback_max_intraday_break` | 0.01 | 盘中最大假跌破。 | 容忍更深回踩。 | 更强调支撑不能破坏。 |
+| `short_entry.pullback_max_age` | 10 | 设置最长保留交易日。 | 等待更久。 | 更快失效。 |
+
 ETF 当前硬规则摘要：
 
 | 场景 | 规则 |
 | --- | --- |
-| 建仓 | 未持仓/已平仓标的才参与建仓筛选。核心看 MA5 与 MA10 的关系、MACD 改善、量能倍数。MA20 是增强项，不替代 MA5/MA10 核心关系。 |
+| 中期不参与 | MA20 仍向下或周 MACD 明显走弱时硬否决。 |
+| 密切观察 | MA5 已在 MA10 上方且日 MACD 绿柱缩短或转红；同时提示周 MACD 和 MA20。 |
+| 趋势确认 | 价格与 MA5 站上 MA20、MA20 走平或向上、周/日 MACD 共同确认。 |
+| 短期入场 | 中期确认后再等突破或缩量回踩承接；过热巨量长阳不追。 |
 | 平仓 | 只对当前持仓标的提示。已平仓标的不再给平仓提示，而是重新进入建仓筛选。 |
 
 ## TL 参数
@@ -52,6 +74,8 @@ TL 输出状态：
 | 模型触发建仓候选 | 周线关注并满足周线 KDJ 低位反弹，或日线关注并满足日线 KDJ 低位反弹；若周线硬否决开启，则不能被日线覆盖。 |
 
 ## 可转债风控参数
+
+当前 `convertible_bond.active_strategy = dynamic_v2`，实际结构为 `legacy_v1` 基础决策层加默认启用的 `dynamic_v2` 辅助层。基础层决定分数、资格和排名；辅助层不改变这些字段。
 
 这些参数先于打分生效。被硬排除的标的不会进入普通 Top 候选。
 
@@ -131,6 +155,25 @@ score =
 | `convertible_bond.score_weights.credit` | 0.15 | 信用权重 | 债项评级、价格、YTM 风险形成的信用得分。 | 更偏高评级和信用稳健。 | 信用约束变弱。 |
 | `convertible_bond.score_weights.redemption` | 0.10 | 强赎状态权重 | 强赎风险状态得分。 | 更压制强赎相关风险。 | 强赎状态影响降低。 |
 | `convertible_bond.score_weights.scale` | 0.05 | 规模权重 | 存续规模和未转股比例综合得分。 | 更偏流动性/规模大的转债。 | 规模影响变弱。 |
+
+## 可转债动态辅助参数
+
+下表路径均相对于 `convertible_bond`。
+
+| 参数 | 当前值 | 含义 |
+| --- | ---: | --- |
+| `strategy_profiles.dynamic_v2.base_weight` | 0.8 | 插件配置元数据；当前未合成为最终排名分。 |
+| `strategy_profiles.dynamic_v2.dynamic_weight` | 0.2 | 插件配置元数据；当前未合成为最终排名分。 |
+| `auxiliary_overlay.enabled` | true | 是否计算四项短期辅助。 |
+| `dynamic_scoring.stock_strong_threshold` | 3 | 正股明显走强阈值（%）。 |
+| `dynamic_scoring.stock_weak_threshold` | -3 | 正股明显走弱阈值（%）。 |
+| `dynamic_scoring.bond_strong_threshold` | 3 | 转债明显走强阈值（%）。 |
+| `dynamic_scoring.bond_weak_threshold` | -2 | 转债明显走弱阈值（%）。 |
+| `dynamic_scoring.relative_gap_threshold` | 2 | 正股与转债相对涨幅差阈值（百分点）。 |
+| `dynamic_scoring.premium_expand_threshold` | 2 | 溢价扩大警戒阈值（百分点）。 |
+| `dynamic_scoring.premium_compress_threshold` | -2 | 溢价收缩关注阈值（百分点）。 |
+
+四项输入为正股涨跌、转债涨跌、前一日转股溢价率和当日溢价率变化。代码保持 `score = base_score`，动态辅助只写入 `auxiliary_score/dynamic_score/state/note/components`。
 
 ## 组合风控参数
 

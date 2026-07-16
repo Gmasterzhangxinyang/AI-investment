@@ -1,5 +1,7 @@
 # TL的30年国债ETF资金流向辅助设计
 
+> 历史实施记录：本文保留当时的设计、测试步骤和 rollout 假设，不代表当前默认配置。当前运行口径请看 [当前系统事实清单](../../CURRENT_SYSTEM.md) 和 configs/strategy_params.json。
+
 ## 目标
 
 在现有TL日线/周线MACD与KDJ状态诊断旁边，增加30年国债ETF（511090.SH）份额变化的资金流向辅助信息。新信息只用于解释资金是否配合、是否与技术状态背离，不改变现有TL的`entry_candidate`、`attention`、`no_trade`或`neutral`状态。

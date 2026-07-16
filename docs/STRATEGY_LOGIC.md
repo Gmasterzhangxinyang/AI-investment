@@ -1,73 +1,133 @@
-# Strategy Logic
+# 当前策略逻辑
 
-## ETF
+本文档描述当前启用口径。策略结果全部由确定性代码产生，AI 只解释证据。
 
-ETF assets are split by configured position state:
+## ETF：当前默认 `trend_pullback_v2`
 
-- Holding: evaluate sell/risk alerts
-- Not holding or closed: evaluate buy candidates
+系统仍保留 `legacy_v1` 插件，但当前 `etf.active_strategy` 是 `trend_pullback_v2`。
 
-Buy signals:
+### 中期趋势
 
-- MA5 crosses above MA10
-- or MACD golden cross
-- and volume ratio passes configured threshold
+先检查硬否决：
 
-MA20 is an enhancement/explanation field, not a hard entry condition. The core moving-average relationship is MA5 versus MA10. If MA5 is also above MA20, the report labels it as an enhancement item.
+- MA20 明显继续向下；或
+- 周 MACD 绿柱扩大、红柱明显走弱等不利状态。
 
-Volume ratio:
+存在硬否决时，中期状态为 `do_not_participate`。没有硬否决后，再检查：
+
+- 收盘价站上 MA20；
+- MA5 站上 MA20；
+- MA20 走平或向上；
+- 周 MACD 有利；
+- 日 MACD 红柱确认。
+
+共同满足时为 `trend_confirmed`，否则为 `trend_not_confirmed`。
+
+### 密切观察
+
+客户规则按以下方式表达：
 
 ```text
-vol_ratio60 = today volume / average volume of the previous 60 trading days
+MA5 已在 MA10 上方
+且日 MACD 绿柱缩短或转红
+=> close_watch（密切观察）
 ```
 
-Sell signals:
+观察状态同时提示：
 
-- close below MA10 with volume expansion
-- or close below MA5 with stronger volume expansion
+1. 周 MACD 是否绿柱缩短或红柱加长。
+2. MA20 是否走平。
 
-Ranking:
+密切观察不是趋势确认，也不是建仓候选。
+
+### 短期入场
+
+只有中期为 `trend_confirmed`，才继续判断短期：
+
+- `overheated_do_not_chase`：涨幅、阳线实体、量能和 MA5 偏离达到过热阈值，进入冷却，不追涨。
+- `waiting_confirmation`：趋势刚确认，等待后续确认。
+- `waiting_pullback`：等待回踩 MA5/MA10 或突破位后的承接。
+- `can_enter`：突破确认或缩量回踩确认满足，才可成为短期有效入场状态。
+- `no_entry`：没有有效短期结构。
+
+突破确认使用“趋势确认日（设置日）”，不是固定指前一天。默认要求收盘价高于 MA5 的偏离低于 3%。
+
+### 持仓退出
+
+只有 `holding` 标的检查退出：
+
+- 收盘跌破 MA10 且量能倍数达到 1.2；或
+- 收盘跌破 MA5 且量能倍数达到 1.2。
+
+### 排名
+
+当前排名继续使用可解释基础分：
 
 ```text
 score = trend * 35% + macd * 25% + volume * 25% + share_change * 15%
 ```
 
+中期/短期状态决定策略资格与解释，评分只用于相对排序，不能替代状态条件。
+
+## ETF：保留插件 `legacy_v1`
+
+原策略只看 MA5/MA10、MACD、前 60 日量能和持仓退出：
+
+- MA5 当日上穿 MA10、MACD 柱改善、量能达标；或
+- DIF 当日上穿 DEA、MA5 高于 MA10、收盘高于 MA20、量能达标。
+
+它不单独输出中期趋势，因此 `medium_status=not_applicable`。切换策略必须保存配置并刷新成功，不能把两套实时规则混用。
+
 ## TL
 
-Phase one only supports daily frequency.
+TL 只做日频状态诊断：
 
-States:
+- `不做交易`
+- `关注交易`
+- `模型触发建仓候选`
 
-- 不做交易
-- 关注交易
-- 模型触发建仓候选
+核心规则：
 
-Core logic:
+- 周 MACD 红柱缩短、绿柱加长或红转绿属于不利状态。
+- 周 MACD 红柱加长、绿柱缩短或绿转红属于改善。
+- 周线近 2 周最低 J 需低于 20，且当前 J 回升，才满足周线 KDJ 低位反弹。
+- 日线近 3 日最低 J 需低于 5，且当前 J 回升，才满足日线 KDJ 低位反弹。
+- `weekly_no_trade_hard_veto=true`：周线不利时，日线不能强行升级。
 
-- Weekly no-trade condition: red MACD histogram is shorter than the previous week, green histogram is longer than the previous week, or red turns green.
-- Weekly attention condition: red MACD histogram is longer than the previous week, green histogram is shorter than the previous week, or green turns red.
-- Weekly entry-candidate condition: weekly attention condition plus a KDJ J low below 20 within T-2 to T-1 weeks, and current weekly J is above that low.
-- Daily entry-candidate condition: daily attention condition plus a KDJ J low below 5 within T-3 to T-1 days, and current daily J is above that low.
-- TL has no sell signal in phase one. The system assumes no existing TL position and only gives entry timing states.
+30 年国债 ETF 份额变化是收盘后辅助观察：0.03 为轻度、0.05 为较大、0.07 为极值参考；滚动方向用于提示潜在拐点，不改变 TL 主状态。
 
-KDJ output wording:
+## 可转债
 
-- The displayed weekly value is "the lowest J value over the previous 2 weeks"; it is not automatically a low-position signal.
-- The weekly KDJ condition is satisfied only when that value is below 20 and the current weekly J rebounds above it.
-- The displayed daily value is "the lowest J value over the previous 3 days"; it is not automatically a low-position signal.
-- The daily KDJ condition is satisfied only when that value is below 5 and the current daily J rebounds above it.
+当前结构不是一个把所有字段混成总分的新模型，而是两层：
 
-MACD histogram convention:
+### `legacy_v1` 基础决策层
+
+1. 先硬排除：价格、强赎、ST、信用评级、异常 YTM、高溢价、过小规模。
+2. 再按基本面、溢价率、YTM、期限、信用、强赎和规模计算 `base_score`。
+3. 决定 `base_grade`、资格、动作和最终排名。
+4. 只从 `qualified` 中做行业分散并展示 Top10，不用弱观察或风险观察凑数。
+
+### `dynamic_v2` 四项辅助层
+
+读取：
+
+- 正股当日涨跌；
+- 转债当日涨跌；
+- 前一日转股溢价率；
+- 当日转股溢价率变化。
+
+输出关注补涨、谨慎追涨、联动走弱、正常联动或数据不足。当前代码保持：
 
 ```text
-red histogram = positive MACD histogram
-green histogram = negative MACD histogram
-attention = current histogram > previous histogram
-no-trade = current histogram < previous histogram, with explicit red-to-green protection
+score = base_score
+dynamic_score = auxiliary_score
 ```
 
-Weekly signals are calculated causally as of each report date. For a Wednesday report, the current weekly bar uses data only through that Wednesday, not the future Thursday/Friday values.
+因此动态层不改变硬排除、基础分、资格、动作和最终排名。它是收盘后辅助解释，不是新的交易评分。
 
-## LLM boundary
+## 历史诊断边界
 
-When enabled and explicitly used, the configured LLM provider can write explanations from existing evidence. It cannot change signal tables, scores, historical diagnostics, or risk flags.
+- ETF v2 统计信号后 1/3/5/10/20 日收益分布、最大有利/不利波动和假反转。
+- 兼容层仍保留部分 T 日信号、T+1 开盘执行的历史交易证据。
+- 当前没有完整组合资金曲线、仓位管理、滑点建模、年化收益、Sharpe 或正式样本外回测。
+- 所有历史结果只用于检查规则表现，不构成未来收益证明。

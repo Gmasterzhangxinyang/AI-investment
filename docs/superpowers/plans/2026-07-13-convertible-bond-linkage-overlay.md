@@ -1,5 +1,7 @@
 # Convertible Bond Linkage Overlay Implementation Plan
 
+> 历史实施记录：本文保留当时的设计、测试步骤和 rollout 假设，不代表当前默认配置。当前运行口径请看 [当前系统事实清单](../../CURRENT_SYSTEM.md) 和 configs/strategy_params.json。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Read the four new convertible-bond linkage fields and add deterministic short-term warning labels without changing the existing score, rank, qualification, eligibility, action, or Top10 order.
@@ -323,4 +325,3 @@ Expected: zero failures and no diff whitespace errors.
 - [ ] **Step 5: Reload the local preview and visually inspect CB tables**
 
 Confirm that abnormal linkage labels remain readable, normal rows show no verbose note, and the original ranking/order is unchanged.
-

@@ -146,6 +146,8 @@ schemas.py
 
 The chat layer has a rule fast lane, a focused AI lane, and a bounded ReAct deep lane. Every lane builds evidence from dashboard JSON and SQLite through read-only tools. The LLM can explain only that evidence.
 
+The current strategy and model truth is summarized in `docs/CURRENT_SYSTEM.md`. Files under `docs/superpowers/plans` and `docs/superpowers/specs` are historical implementation records.
+
 ### frontend
 
 Local dashboard:

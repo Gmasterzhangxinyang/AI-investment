@@ -1,5 +1,7 @@
 # ETF v2 Configurable Strategy Plugin Design
 
+> 历史实施记录：本文保留当时的设计、测试步骤和 rollout 假设，不代表当前默认配置。当前运行口径请看 [当前系统事实清单](../../CURRENT_SYSTEM.md) 和 configs/strategy_params.json。
+
 **Date:** 2026-07-10  
 **Status:** Approved for implementation (customer confirmed 2026-07-12)
 

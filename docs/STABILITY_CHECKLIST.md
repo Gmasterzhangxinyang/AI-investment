@@ -89,3 +89,11 @@
 - [ ] 日常解释使用 economy model；跨资产深度分析才使用完整 Agent。
 - [ ] AI 不能访问互联网、任意文件、SQL、写库、账户或下单接口。
 - [ ] 质检总数和提醒总数不因证据明细裁剪而减少。
+- [ ] 多 ETF 问题逐只返回证据，不把 `no_entry` 改写成“进入观察”。
+
+## Documentation
+
+- [ ] `docs/CURRENT_SYSTEM.md` 中的 active strategy 与 `configs/strategy_params.json` 一致。
+- [ ] ETF、可转债和 Agent 主说明不把历史 rollout 假设写成当前默认。
+- [ ] 历史 plans/specs 顶部保留“历史实施记录”标记。
+- [ ] `tests/test_documentation_current.py` 通过。

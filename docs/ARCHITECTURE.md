@@ -13,6 +13,12 @@ Orchestrator
 
 Signals are deterministic. LLM output may explain signals but must not change them.
 
+Current strategy selection:
+
+- ETF live plugin: `trend_pullback_v2`; `legacy_v1` remains switchable and diagnostic-only when not active.
+- TL: deterministic daily/weekly MACD-KDJ rules with a non-decision ETF-share-flow overlay.
+- Convertible bonds: `legacy_v1` base decision plus enabled `dynamic_v2` auxiliary overlay; the overlay does not change rank.
+
 ## Atomic refresh and publish
 
 Daily refresh is a two-phase operation:
@@ -93,4 +99,4 @@ Question
   -> trace persistence
 ```
 
-The chat Agent never receives raw SQL or unrestricted filesystem/network tools. Tool permissions and row limits are code-level contracts in `chat/tool_registry.py` and `chat/access_policy.py`. See `docs/CHAT_AGENT_RUNTIME.md`.
+The chat Agent never receives raw SQL or unrestricted filesystem/network tools. Tool permissions and row limits are code-level contracts in `chat/tool_registry.py` and `chat/access_policy.py`. Multi-ETF current-state questions use a deterministic batch tool so every named asset is reviewed even when AI is enabled. See `docs/CHAT_AGENT_RUNTIME.md`.

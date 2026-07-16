@@ -1,409 +1,227 @@
-# ETF 判断逻辑、模型与公式
+# ETF 模型与公式
 
-本文档描述当前系统 ETF 板块的确定性规则。ETF 信号由代码生成，AI 只负责解释证据，不参与新增标的、修改信号或承诺收益。
+ETF 信号由确定性代码生成。当前默认策略是 `trend_pullback_v2` 2.0.0；`legacy_v1` 1.0.0 作为可切换插件和历史对照保留。AI 不能改变任何状态、信号、评分或排名。
 
-## 策略插件与使用方式
+## 1. 插件与生效方式
 
-系统内置两套可切换 ETF 策略：
+| 插件 | 当前用途 |
+| --- | --- |
+| `trend_pullback_v2` | 当前实时默认；拆分中期趋势与短期入场，过滤假反转和过热追涨。 |
+| `legacy_v1` | 保留原 MA5/MA10、MACD、量能规则；可切换，也参与诊断对照。 |
 
-- `legacy_v1`：完整保留原有均线、MACD、量能规则。
-- `trend_pullback_v2`：同时输出中期趋势状态与短期入场状态，增加 MA20 斜率、周 MACD、过热冷却、突破/回踩确认。
+操作路径：`策略参数 → ETF 当前策略 → 保存 → 一键刷新`。保存只修改配置；刷新成功后，新的策略 ID、版本和配置哈希才进入 dashboard、SQLite 和报告。刷新失败继续展示上一版结果。
 
-用户操作：`策略参数 → ETF策略 → 选择策略 → 保存 → 刷新数据`。出现“已保存，待刷新后生效”时，页面仍展示上一次成功结果；刷新成功后才显示新策略结果。
+## 2. 输入与基础指标
 
-开发者新增策略：在 `strategies/` 下新增策略包，实现 `evaluate` 与 `evaluate_history`，提供 ID、版本、默认参数和参数结构，在注册表显式注册并补齐合约/兼容测试。新增代码需重启一次，之后切换已注册策略只需保存并刷新。
+必要行情：日期、代码、名称、开高低收、成交量；成交额和份额变化在模板提供时使用。持仓状态来自 ETF 控制表或 `configs/positions.csv`。
 
-## 1. 输入数据
-
-ETF 模块读取 Wind Excel 中的日频宽表，并标准化为逐日逐标的行情。
-
-必要字段：
-
-- 日期
-- ETF 代码
-- ETF 名称
-- 开盘价
-- 最高价
-- 最低价
-- 收盘价
-- 成交量（万股）
-- 成交额（亿元），如模板提供
-- 份额变化（亿份），如模板提供
-
-持仓状态来自 ETF 控制表或 `configs/positions.csv`：
-
-- `holding`：当前持有，系统才允许给出平仓提示。
-- `closed` / `flat` / `watch`：不再给平仓提示，重新进入建仓筛选或关注池。
-
-## 2. 基础指标公式
-
-### 2.1 均线
-
-对每只 ETF 按日期升序计算：
+### 均线
 
 ```text
 MA_N(t) = mean(Close(t-N+1), ..., Close(t))
 ```
 
-当前使用：
+当前计算 MA5、MA10、MA20、MA60。
 
-- `MA5`
-- `MA10`
-- `MA20`
-- `MA60`
+### 前 60 日量能倍数
 
-### 2.2 成交量倍数
-
-系统使用前 60 个交易日均量作为基准，并且为了避免当日成交量污染均量，基准均量会向前移动 1 日：
+为了避免当日成交量污染基准：
 
 ```text
 VolMA60(t) = mean(Volume(t-60), ..., Volume(t-1))
 VolRatio60(t) = Volume(t) / VolMA60(t)
 ```
 
-代码实现中 `VolMA60` 使用 `volume.shift(1).rolling(60, min_periods=20).mean()`，因此在历史不足 60 日但已有 20 日以上时也可以给出初步量能判断。
+实现使用 `volume.shift(1).rolling(60, min_periods=20).mean()`。
 
-### 2.3 MACD
-
-```text
-EMA12(t) = EMA(Close, span=12)
-EMA26(t) = EMA(Close, span=26)
-DIF(t) = EMA12(t) - EMA26(t)
-DEA(t) = EMA(DIF, span=9)
-MACDHist(t) = DIF(t) - DEA(t)
-```
-
-当前系统使用的是 `DIF - DEA` 作为 MACD 柱，不乘以 2。
-
-### 2.4 KDJ
+### MACD
 
 ```text
-Low9(t) = min(Low(t-8), ..., Low(t))
-High9(t) = max(High(t-8), ..., High(t))
-RSV(t) = (Close(t) - Low9(t)) / (High9(t) - Low9(t)) * 100
+DIF = EMA12(Close) - EMA26(Close)
+DEA = EMA9(DIF)
+MACDHist = DIF - DEA
 ```
 
-初始：
+系统柱值不乘 2。正值称红柱，负值称绿柱。
+
+### MA20 斜率
+
+默认回看 5 个交易日：
 
 ```text
-K(0) = 50
-D(0) = 50
+MA20Slope = MA20(t) / MA20(t-5) - 1
 ```
 
-递推：
+绝对值不超过 `0.003` 视为近似走平；高于区间视为向上，低于区间视为向下。
+
+### 周 MACD
+
+日线按已发生数据聚合成周线。当前交易周只使用截至报告日的数据，不读取未来交易日。系统识别红柱加强/减弱、绿柱缩短/扩大和红绿切换。
+
+## 3. 当前默认：中期趋势模块
+
+输出枚举：
 
 ```text
-K(t) = 2/3 * K(t-1) + 1/3 * RSV(t)
-D(t) = 2/3 * D(t-1) + 1/3 * K(t)
-J(t) = 3 * K(t) - 2 * D(t)
+do_not_participate
+trend_not_confirmed
+trend_confirmed
+data_unavailable
 ```
 
-ETF 当前主要使用 MA、MACD、量能，KDJ 主要进入标的详情展示。
+### 3.1 硬否决
 
-## 3. 建仓判断
+出现以下任一明显不利条件时为 `do_not_participate`：
 
-建仓信号在 T 日收盘后生成。历史诊断中若产生信号，成交假设使用 T+1 开盘价。
+- MA20 继续向下；
+- 周 MACD 绿柱扩大；
+- 周 MACD 红柱走弱达到策略定义的不利状态。
 
-当前有两类建仓触发。
+这用于过滤“长期下跌后突然放量长阳”的假反转。单日上涨和放量不能覆盖中期硬否决。
 
-### 3.1 均线上穿类建仓
+### 3.2 趋势确认
 
-条件：
+没有硬否决后，确认项包括：
+
+- 收盘价高于 MA20；
+- MA5 高于 MA20；
+- MA20 走平或向上；
+- 周 MACD 有利；
+- 日 MACD 为红柱确认。
+
+共同满足时为 `trend_confirmed`。趋势确认是中期安全垫，不等于短期可以立即建仓。
+
+## 4. 当前默认：密切观察与短期入场
+
+输出枚举：
 
 ```text
-MA5(t-1) <= MA10(t-1)
-MA5(t) > MA10(t)
-MACDHist(t) > MACDHist(t-1)
-VolRatio60(t) >= BuyVolumeThreshold
+no_entry
+close_watch
+overheated_do_not_chase
+waiting_confirmation
+waiting_pullback
+can_enter
+data_unavailable
 ```
 
-默认：
+### 4.1 密切观察
+
+客户核心规则：
 
 ```text
-BuyVolumeThreshold = 1.1
+MA5 已在 MA10 上方
+且日 MACD 绿柱缩短或转红
+=> close_watch
 ```
 
-如果同时满足：
+系统同时提示周 MACD 是否绿柱缩短/红柱加长，以及 MA20 是否走平。`close_watch` 只是观测状态，可与中期未确认同时存在，不能升级为建仓候选。
+
+### 4.2 趋势确认日
+
+“趋势确认日（设置日）”是中期趋势第一次转为 `trend_confirmed` 的交易日，不固定指前一天。系统记录当日收盘、高点、成交量和均线，默认最多保留 10 个交易日用于等待确认。
+
+### 4.3 过热保护
+
+默认阈值：
+
+| 条件 | 当前值 |
+| --- | ---: |
+| 单日涨幅 | 4% |
+| 阳线实体占振幅 | 60% |
+| 量能倍数 | 1.8 |
+| 收盘高于 MA5 偏离 | 3% |
+| 冷却期 | 3 个交易日 |
+
+涨幅、实体、量能和 MA5 偏离共同显示明显过热时为 `overheated_do_not_chase`。这类信号只提示不追涨，不能写成建仓。
+
+### 4.4 突破确认
+
+中期趋势已确认后，后续交易日需要：
+
+- 收盘突破趋势确认日高点；
+- 日 MACD 保持红柱；
+- 收盘相对 MA5 的偏离低于默认 3%；
+- 当日不属于过热状态。
+
+满足后才可能进入 `can_enter`。
+
+MA5 偏离计算：
 
 ```text
-MA5(t) > MA20(t)
+MA5Distance = Close / MA5 - 1
 ```
 
-系统会在触发原因中增加：
+### 4.5 回踩确认
+
+也可以不追突破，等待价格回踩 MA5、MA10 或突破位。默认支撑容忍度 0.5%，盘中最大假跌破 1%，并要求收盘重新站稳、成交量较设置日缩小且日 MACD 未破坏。
+
+## 5. 持仓退出
+
+只有 `holding` ETF 检查退出。v2 当前复用已验证的原策略退出口径：
 
 ```text
-MA5同时高于MA20（增强项）
+Close < MA10 and VolRatio60 >= 1.2
+or
+Close < MA5 and VolRatio60 >= 1.2
 ```
 
-注意：`MA5 > MA20` 不是硬条件，只是增强项。
+未持仓、已平仓和观察状态不会生成平仓提示。
 
-### 3.2 MACD 金叉类建仓
-
-条件：
+## 6. 排名评分
 
 ```text
-DIF(t-1) <= DEA(t-1)
-DIF(t) > DEA(t)
-MA5(t) > MA10(t)
-Close(t) > MA20(t)
-VolRatio60(t) >= BuyVolumeThreshold
+Score = TrendScore * 0.35
+      + MACDScore * 0.25
+      + VolumeScore * 0.25
+      + ShareChangeScore * 0.15
 ```
 
-触发原因：
+份额变化缺失时使用中性值。评分用于相对排序，不会替代 `medium_status`、`short_entry_status` 和持仓路径。
+
+## 7. `legacy_v1` 保留规则
+
+原策略两类建仓：
 
 ```text
-MACD金叉
+规则 A：MA5 当日上穿 MA10 + MACD 柱改善 + VolRatio60 >= 1.1
+规则 B：DIF 当日上穿 DEA + MA5 > MA10 + Close > MA20 + VolRatio60 >= 1.1
 ```
 
-## 4. 平仓判断
+MA5 高于 MA20 在规则 A 中是增强项，不是硬条件。原策略不划分中期趋势，所以 `medium_status=not_applicable`。启用原策略时，前端隐藏 v2 专属的中期/短期列，仅保留原策略信号与风险辅助。
 
-平仓信号在 T 日收盘后生成。只有持仓状态为 `holding` 的 ETF 才会输出平仓提示。
+## 8. 历史表现诊断
 
-### 4.1 跌破 MA10 平仓
+v2 对状态转折事件统计：
+
+- 1/3/5/10/20 日后收益分布；
+- 期间最大有利波动和最大不利波动；
+- 10 日假反转次数；
+- 突破确认与回踩确认分组。
+
+这些数据回答“历史上相同状态之后通常怎样”，不是完整交易系统回测。兼容层虽仍保留 T 日收盘信号、T+1 开盘执行的交易证据，但当前没有组合资金曲线、仓位管理、滑点、年化收益、Sharpe 或正式样本外验证。
+
+## 9. 输出字段
+
+每只 ETF 至少包含：
 
 ```text
-Close(t) < MA10(t)
-VolRatio60(t) >= SellMA10VolumeThreshold
+strategy_id, strategy_version, config_hash
+medium_status, medium_reason
+short_entry_status, short_entry_reason
+weekly_macd_state, weekly_macd_confirmation_check
+ma20_slope_5d, ma20_slope_state, ma20_flat_check
+ma5_ma10_signal, ma5_ma20_status
+close, ma5, ma10, ma20, ma60
+vol_ratio60, macd_hist, dif, dea
+rule_hits, risk_notes, score
 ```
 
-默认：
+页面上的“趋势确认”“密切观察”“过热不追”“等待回踩”“可考虑入场”必须直接来自这些确定性字段，AI 不得自行转换状态。
 
-```text
-SellMA10VolumeThreshold = 1.2
-```
+## 10. 边界
 
-触发原因：
-
-```text
-收盘跌破MA10且放量
-```
-
-### 4.2 跌破 MA5 平仓
-
-```text
-Close(t) < MA5(t)
-VolRatio60(t) >= SellMA5VolumeThreshold
-```
-
-默认：
-
-```text
-SellMA5VolumeThreshold = 1.5
-```
-
-触发原因：
-
-```text
-收盘跌破MA5且明显放量
-```
-
-## 5. 关注池判断
-
-关注池不是建仓候选。它用于展示“接近触发但尚未满足完整建仓条件”的 ETF。
-
-### 5.1 均线已触发，量能未确认
-
-```text
-MA5(t-1) <= MA10(t-1)
-MA5(t) > MA10(t)
-MACDHist(t) > MACDHist(t-1)
-VolRatio60(t) < BuyVolumeThreshold
-```
-
-动作：
-
-```text
-关注，等待放量确认
-```
-
-### 5.2 MACD 接近确认，量能未确认
-
-```text
-Gap(t) = DIF(t) - DEA(t)
-Gap(t-1) = DIF(t-1) - DEA(t-1)
-Gap(t) < 0
-Gap(t) > Gap(t-1)
-Close(t) > MA20(t)
-VolRatio60(t) < BuyVolumeThreshold
-```
-
-动作：
-
-```text
-关注，等待MACD金叉与量能确认
-```
-
-### 5.3 趋势改善，量能未确认
-
-```text
-MA5(t) > MA10(t)
-Close(t) > MA20(t)
-MACDHist(t) > MACDHist(t-1)
-VolRatio60(t) < BuyVolumeThreshold
-```
-
-动作：
-
-```text
-跟踪，不追高，等待再次放量
-```
-
-## 6. ETF 评分模型
-
-ETF 评分用于排序，不单独决定建仓。建仓必须先满足规则条件。
-
-当前权重：
-
-```text
-TrendWeight = 0.35
-MACDWeight = 0.25
-VolumeWeight = 0.25
-ShareChangeWeight = 0.15
-```
-
-总分：
-
-```text
-ETFScore =
-  TrendScore * TrendWeight
-  + MACDScore * MACDWeight
-  + VolumeScore * VolumeWeight
-  + ShareChangeScore * ShareChangeWeight
-```
-
-### 6.1 趋势分
-
-```text
-TrendScore = 0
-if MA5 > MA10: TrendScore += 50
-if Close > MA20: TrendScore += 30
-if Close > MA60: TrendScore += 20
-```
-
-### 6.2 MACD 分
-
-```text
-MACDScore = 50 + clip(MACDHist * 3000, -50, 50)
-```
-
-取值范围：
-
-```text
-0 <= MACDScore <= 100
-```
-
-### 6.3 量能分
-
-```text
-VolumeScore = min(VolRatio60 / 2 * 100, 100)
-```
-
-### 6.4 份额变化分
-
-如果模板中存在 `份额变化（亿份）`：
-
-```text
-ShareChangeScore = clip(50 + ShareChange * 5, 0, 100)
-```
-
-如果没有该字段：
-
-```text
-ShareChangeScore = 50
-```
-
-## 7. 历史诊断模型
-
-### 7.1 完整交易历史诊断
-
-信号和交易时点：
-
-```text
-T 日收盘后生成信号
-T+1 日开盘价模拟成交
-```
-
-建仓：
-
-```text
-EntrySignalDate = T
-EntryDate = T+1
-EntryPrice = Open(T+1)
-```
-
-平仓：
-
-```text
-ExitSignalDate = T
-ExitDate = T+1
-ExitPrice = Open(T+1)
-```
-
-收益：
-
-```text
-GrossReturn = ExitPrice / EntryPrice - 1
-NetReturn = GrossReturn - 2 * FeeRate
-```
-
-当前费用假设：
-
-```text
-FeeRate = 0.001
-```
-
-即双边合计扣 `0.2%`。
-
-### 7.2 次日方向验证
-
-用于验证“今天按规则给出信号，下一交易日方向是否符合预期”。
-
-建仓信号：
-
-```text
-ExpectedDirection = 上涨
-NextDayReturn = Close(T+1) / Open(T+1) - 1
-Hit = NextDayReturn > 0
-```
-
-平仓信号：
-
-```text
-ExpectedDirection = 下跌
-NextDayReturn = Close(T+1) / Open(T+1) - 1
-Hit = NextDayReturn < 0
-```
-
-注意：平仓信号更偏风险控制，不一定等同于预测次日下跌。
-
-## 8. 输出结果
-
-ETF 页面输出：
-
-- 建仓候选
-- 平仓提示
-- 关注池
-- 近 30 交易日短期方向诊断
-- 完整交易历史诊断
-- 标的详情近 8 日指标
-
-主要字段：
-
-- `ma5_ma10_signal`
-- `ma5_ma20_status`
-- `volume_check`
-- `vol_ratio60`
-- `macd_hist`
-- `score`
-- `signal_reason`
-- `watch_type`
-- `missing_condition`
-- `suggested_action`
-
-## 9. 当前边界
-
-- ETF 模块目前是规则模型，不是机器学习模型。
-- 建仓、平仓由确定性条件触发，评分只用于排序。
-- 只有持仓状态为 `holding` 的 ETF 才会输出平仓提示。
-- 历史诊断不代表未来收益，只用于验证历史信号表现。
-- 当前尚未实现组合级资金曲线、最大回撤、年化收益和 Sharpe。
+- 模型适合 5 至 20 个交易日的中短期趋势观察，不是次日涨跌预测器。
+- 趋势确认不等于必涨，短期入场也不保证收益。
+- 历史诊断只能检查规则表现，不能证明绝对收益。
+- 当前不接入实时盘中行情、新闻或账户交易。

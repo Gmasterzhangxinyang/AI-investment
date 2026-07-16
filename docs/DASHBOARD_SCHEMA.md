@@ -162,3 +162,7 @@ high | medium | low
 # ETF 策略状态扩展
 
 `etf.strategy` 记录 `strategy_id`、`strategy_version` 和 `config_hash`。`etf.all_signals` 的每行同时包含 `medium_status` 与 `short_entry_status`。`etf.historical_diagnostics` 是 1/3/5/10/20 日历史表现描述，不是 P&L 回测或收益承诺。
+
+# 可转债策略状态扩展
+
+`convertible_bond.strategy` 记录当前基础策略与辅助层身份。候选行保留 `strategy_id/base_score/base_grade` 和 `overlay_id/auxiliary_score/auxiliary_state/auxiliary_note/auxiliary_data_quality`。当前 dynamic_v2 只做辅助，`score` 仍等于 `base_score`，排名不得由辅助字段改写。
