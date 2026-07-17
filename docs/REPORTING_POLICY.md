@@ -52,7 +52,7 @@ AI 只能解释 `dashboard.json`、SQLite 和策略参数中已经存在的 `rea
 - 绕过数据质量或风控规则。
 - 把历史诊断包装成收益证明。
 
-投研问答默认使用本地规则证据包回答；只有用户点击 `AI 智能问答` 并确认后，才调用 `configs/model_config.json` 中配置的 provider。明确查数仍走规则快速路径，普通解释使用 `economy_model`，跨资产深度分析使用 `chat.primary_model` 和受控 Agent。前端 `AI 模型` 面板可选择深度模型、遮挡修改 Key 并验证连通。Provider 不可用或超时时，系统必须降级为本地确定性解释，不能阻塞日报生成。
+投研问答关闭 AI 时使用本地规则回答；只有用户点击 `AI 智能问答` 并确认后，才调用 `configs/model_config.json` 中配置的 provider。明确查数仍走规则快速路径；单标的趋势、原因和综合分析进入独立 AI 研究层，使用 `economy_model`；跨资产深度分析使用 `chat.primary_model` 和受控 Agent。AI 可以评价规则，但不能改写正式信号、评分或排名。前端 `AI 模型` 面板可选择深度模型、遮挡修改 Key 并验证连通。Provider 不可用或超时时，系统必须明确降级为本地确定性回答，不能阻塞日报生成。
 
 ## 固定免责声明
 

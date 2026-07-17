@@ -72,7 +72,7 @@ def build_rule_contract(params: Mapping[str, Any] | None) -> dict[str, Any]:
             "动态辅助观察正股涨跌、转债涨跌、股债相对强弱和转股溢价率变化；"
             "它用于补充历史变化信息，但不改变原始分数和排名，只形成辅助状态与风险说明。"
         ),
-        "AI只能解释代码给出的rank、score、qualification和风险字段，不得新增候选或主观改排名。",
+        "AI可以基于行情与风险证据独立分析，但不得新增候选、改写代码给出的rank、score、qualification或主观调整排名。",
     ]
 
     return {

@@ -144,6 +144,60 @@ def test_multi_etf_status_answer_stays_deterministic_when_llm_is_enabled() -> No
     assert not use_llm
 
 
+def test_ai_enabled_single_etf_trend_question_uses_model_but_exact_metric_does_not() -> None:
+    orchestrator = ChatOrchestrator(ROOT)
+
+    assert orchestrator._should_use_llm(
+        ChatRequest(question="查下黄金ETF中期趋势", allow_llm=True),
+        "规则兜底回答",
+        "etf_detail",
+    )
+    assert not orchestrator._should_use_llm(
+        ChatRequest(question="黄金ETF收盘价", allow_llm=True),
+        "规则精确数值回答",
+        "etf_detail",
+    )
+    assert not orchestrator._should_use_llm(
+        ChatRequest(question="查下黄金ETF中期趋势", allow_llm=False),
+        "规则兜底回答",
+        "etf_detail",
+    )
+
+
+def test_frustrated_followup_keeps_previous_asset_context() -> None:
+    orchestrator = ChatOrchestrator(ROOT)
+    memory = {
+        "lastAsset": {"name": "黄金ETF", "code": "159934.SZ", "asset_type": "ETF"},
+        "lastIntent": "etf_detail",
+        "turns": [{"question": "查下黄金ETF中期趋势", "intent": "etf_detail"}],
+    }
+
+    routed_question = orchestrator._question_with_short_term_memory("我让你查啊", memory)
+    intent = ChatRouter().route(
+        routed_question,
+        {"etf": {"all_signals": [{"name": "黄金ETF", "code": "159934.SZ"}]}},
+    )
+    enriched = orchestrator._enrich_intent_with_short_term_memory("我让你查啊", intent, memory)
+
+    assert enriched.name == "etf_detail"
+    assert enriched.entities["code"] == "159934.SZ"
+
+
+def test_ai_prompt_separates_rule_result_from_independent_ai_analysis() -> None:
+    pack = EvidencePack(
+        report_date="2026-07-15",
+        intent=ChatIntent("etf_detail", 0.94, {"name": "黄金ETF", "code": "159934.SZ"}),
+        rulebook=["规则状态必须来自确定性字段"],
+        tools=[],
+    )
+
+    prompt = ChatOrchestrator(ROOT)._build_prompt("查下黄金ETF中期趋势", pack)
+
+    assert "系统规则结果" in prompt
+    assert "AI分析" in prompt
+    assert "可以说明是否赞同规则" in prompt
+
+
 def test_unknown_named_etf_routes_to_no_data_answer() -> None:
     dashboard = {"etf": {"all_signals": [{"name": "芯片ETF", "code": "512760.SH"}]}}
 

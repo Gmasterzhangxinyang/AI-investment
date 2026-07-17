@@ -132,7 +132,7 @@ test("model settings accept a masked local key without putting it in model confi
   assert.equal(source.includes('id="save-openai-key"'), true);
 });
 
-test("chat always uses the backend rule engine and treats AI as an optional explanation layer", () => {
+test("chat separates the optional AI research layer from deterministic rules", () => {
   const source = fs.readFileSync(path.join(__dirname, "../../frontend/assets/app.js"), "utf8");
   assert.equal(source.includes("allowLlm: state.aiChatEnabled"), true);
   assert.equal(source.includes("ai_chat_not_enabled"), false);
@@ -149,7 +149,9 @@ test("chat removes duplicate completed-step panels and keeps evidence collapsed"
   const source = fs.readFileSync(path.join(__dirname, "../../frontend/assets/app.js"), "utf8");
   assert.equal(source.includes("stream.remove();"), true);
   assert.equal(source.includes("details.open = true"), false);
-  assert.equal(source.includes("双策略对照 · 本地规则计算"), true);
+  assert.equal(source.includes("规则查询 · 双策略本地计算"), true);
+  assert.equal(source.includes("AI研究分析 ·"), true);
+  assert.equal(source.includes("规则查询 · 本地确定性结果"), true);
 });
 
 test("strategy state codes render as concise Chinese labels", () => {

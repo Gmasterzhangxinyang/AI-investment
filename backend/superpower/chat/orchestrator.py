@@ -237,6 +237,10 @@ class ChatOrchestrator:
             # 多标的状态核对属于确定性查询。直接返回逐只规则结果，避免模型把
             # no_entry 口语化成“进入观察”等不存在的状态，同时也显著降低等待时间。
             return False
+        if intent_name == "etf_detail":
+            # AI 开启后，单标的分析问题必须交给模型基于证据自行组织结论。
+            # 收盘价、评分等单一数值查询仍走确定性快路径，避免模型改写精确值。
+            return not self._is_exact_etf_metric_question(request.question)
         if agent_planned:
             if intent_name == "etf_ranking" and deterministic_answer and not self._is_complex_question(request.question):
                 return False
@@ -275,7 +279,10 @@ class ChatOrchestrator:
     def _developer_prompt(self) -> str:
         return (
             "你是本地 AI 投研工作台里的智能投研助理。"
-            "你的工作方式像资深研究员：先确认问题对象，再检查本地数据覆盖，再用规则证据解释状态、风险、缺口和下一步复核重点。"
+            "你不是确定性规则引擎，也不能把规则状态原样复述后冒充AI分析。"
+            "系统规则结果与AI研究判断是两个独立层次：规则结果必须忠实引用；AI分析必须根据工具中的行情、历史指标和风险证据自行综合，允许明确说明赞同或不赞同规则及原因。"
+            "AI分析不能覆盖、篡改或伪装成系统正式信号、评分和排名。"
+            "你的工作方式像资深研究员：先确认问题对象，再检查本地数据覆盖，再综合行情、历史指标、规则状态和风险证据给出研究判断。"
             "你有明确的金融分析思想：先看数据质量，再看趋势与动能是否同向，再看风险约束，最后才讨论动作；宁可说没有数据，也不能补猜。"
             "你只能使用工具返回的 EvidencePack 回答问题。"
             "当且仅当问题类型是 conversation 时，可以进行不涉及市场事实的自然交流和能力介绍；不得借闲聊编造行情、新闻或策略结论。"
@@ -321,8 +328,12 @@ class ChatOrchestrator:
             else "默认控制在800个中文字符以内；只有用户明确要求详细报告时才展开。"
         )
         return (
-            "请回答用户问题。必须严格遵守 investment_framework 和 rulebook，并只引用 tools 中的数据。"
-            "回答必须按策略规则核对：先给结论，再解释规则条件是否满足，再列关键字段证据。"
+            "请回答用户问题。必须遵守investment_framework中的数据与安全边界，并且只引用tools中的事实数据。"
+            "rulebook只用于准确说明系统规则层，不是限制AI研究判断的固定答案模板。"
+            "你是AI研究层，不是规则引擎。若问题涉及策略或交易状态，必须把‘系统规则结果’与‘AI分析’明确分开。"
+            "系统规则结果只能忠实引用tools中的正式字段；AI分析需要结合最近行情、均线、MACD、量能、周线和风险证据独立综合，可以说明是否赞同规则以及原因。"
+            "不要把display_action或一段固定指标摘要当成完整AI回答，也不要声称AI分析就是系统正式信号。"
+            "用户明确询问某套策略时，先准确报告该策略的系统规则结果，再给独立AI分析；一般研究问题不必被固定策略模板限制。"
             "不得使用未在 rulebook 或 Rule contract 中出现的新交易逻辑。"
             "不得用“技术偏强、趋势不错、可能机会”替代建仓条件。"
             "凡是买入、建仓、平仓、TL状态、可转债排名，都必须以 tools 中的 signal/state/rank/score 字段为准。"
@@ -495,7 +506,26 @@ class ChatOrchestrator:
         return asset if isinstance(asset, dict) else {}
 
     def _question_has_reference(self, question: str) -> bool:
-        return any(token in question for token in ["它", "这只", "这个", "刚才", "上面", "该标的", "该ETF", "该转债", "他"])
+        return any(
+            token in question
+            for token in [
+                "它",
+                "这只",
+                "这个",
+                "刚才",
+                "上面",
+                "该标的",
+                "该ETF",
+                "该转债",
+                "他",
+                "你查",
+                "我让你",
+                "继续查",
+                "再查",
+                "刚问",
+                "上一个",
+            ]
+        )
 
     def _fallback_answer(self, question: str, pack: EvidencePack, reason: str) -> str:
         if pack.intent.name == "conversation":
@@ -1195,6 +1225,32 @@ class ChatOrchestrator:
             f"{change}当前规则状态为“{action}”。该数值来自最新已导入数据，不是实时行情。"
         )
 
+    def _is_exact_etf_metric_question(self, question: str) -> bool:
+        """Return True only for narrow factual lookups that do not need AI synthesis."""
+        text = question.lower().replace(" ", "")
+        analysis_tokens = [
+            "趋势",
+            "中期",
+            "短期",
+            "入场",
+            "策略",
+            "2.0",
+            "v2",
+            "怎么看",
+            "怎么样",
+            "为什么",
+            "原因",
+            "分析",
+            "判断",
+            "确认",
+            "风险",
+            "好不好",
+        ]
+        if any(token in text for token in analysis_tokens):
+            return False
+        metric_tokens = ["收盘价", "收盘", "价格", "评分", "分数", "强弱分", "量能倍数", "量能", "量比", "macd柱", "macd"]
+        return any(token in text for token in metric_tokens)
+
     def _signal_action_text(self, row: dict[str, Any]) -> str:
         mapping = {
             "buy_candidate": "模型触发建仓候选",
@@ -1731,7 +1787,7 @@ class ChatOrchestrator:
         return (
             "不能保证赚钱，也不能承诺收益。"
             "这套系统的定位是把 Wind 数据、确定性策略规则、质检和AI解释串起来，帮助用户做更稳定的投研和复核。"
-            "ETF、TL、可转债的信号必须以代码生成的 buy_signal、sell_signal、state、rank 和 score 为准，AI 只能解释证据和提示风险，不能替代投资决策。"
+            "ETF、TL、可转债的正式信号必须以代码生成的 buy_signal、sell_signal、state、rank 和 score 为准；AI研究层可以独立分析证据和评价规则，但不能改写正式结果或替代投资决策。"
         )
 
     def _enrich_intent_with_database_entities(

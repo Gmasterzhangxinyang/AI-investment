@@ -249,7 +249,7 @@ class ResearchToolbox:
             title="Rule contract",
             source="configs.strategy_params + deterministic strategy handlers",
             summary=(
-                f"交易信号由确定性规则生成；当前ETF策略 {active_etf}，LLM 只能解释证据。"
+                f"交易信号由确定性规则生成；当前ETF策略 {active_etf}。AI研究层可独立分析证据，但不能改写正式信号。"
                 f" ETF买入量能阈值 {params.get('etf', {}).get('buy_volume_ratio_min', '--')}，"
                 f"TL周线J阈值 {params.get('tl', {}).get('weekly_j_low_threshold', '--')}，"
                 f"TL日线J阈值 {params.get('tl', {}).get('daily_j_low_threshold', '--')}。"

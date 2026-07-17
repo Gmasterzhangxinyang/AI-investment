@@ -1724,7 +1724,7 @@ function renderAiChatButton() {
 
 function toggleAiChatMode() {
   if (!state.aiChatEnabled) {
-    const ok = window.confirm("开启 AI 智能问答后，系统才会调用大模型解释本地证据。交易信号、排名和风险分层仍以规则代码为准。确认开启？");
+    const ok = window.confirm("开启 AI 智能问答后，模型会基于本地证据独立分析，并与系统规则结果分开显示。交易信号、排名和风险分层仍以规则代码为准。确认开启？");
     if (!ok) return;
     state.aiChatEnabled = true;
   } else {
@@ -1955,8 +1955,10 @@ async function submitChat(question) {
     thinking.querySelector(".message-body span").textContent = isLightweight
       ? (isConversation && !result.llmUsed ? "AI 未开启" : "投研助手")
       : isStrategyComparison
-        ? "双策略对照 · 本地规则计算"
-        : `Trace ${result.traceId} · ${result.intent?.name || "agent"} · ${result.llmModel || (result.llmUsed ? "llm" : "deterministic")}`;
+        ? "规则查询 · 双策略本地计算"
+        : result.llmUsed
+          ? `AI研究分析 · ${result.llmModel || "已启用模型"}`
+          : "规则查询 · 本地确定性结果";
     if (!isLightweight) attachAnalysisDetails(thinking, result, question);
     renderAgentRuntime(result);
     rememberChatTurn(question, result, result.answer);
