@@ -3,12 +3,49 @@ set -u
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="$ROOT_DIR/.venv"
+BUNDLED_PYTHON="$ROOT_DIR/runtime/python/bin/python3"
+BUNDLED_SITE_PACKAGES="$ROOT_DIR/runtime/site-packages"
 
 clear
 echo "AI 投研工作台 - 初始化环境"
 echo "----------------------------------------"
 echo "项目目录: $ROOT_DIR"
 echo ""
+
+if [[ -x "$BUNDLED_PYTHON" && -d "$BUNDLED_SITE_PACKAGES" ]]; then
+  echo "检测到交付包内置 Python 和全部运行依赖。"
+  echo "正在做离线环境自检..."
+  export PYTHONPATH="$BUNDLED_SITE_PACKAGES:$ROOT_DIR/backend:$ROOT_DIR"
+  export PYTHONNOUSERSITE=1
+  export PYTHONDONTWRITEBYTECODE=1
+  if [[ -f "$BUNDLED_SITE_PACKAGES/certifi/cacert.pem" ]]; then
+    export SSL_CERT_FILE="$BUNDLED_SITE_PACKAGES/certifi/cacert.pem"
+  fi
+  if "$BUNDLED_PYTHON" - <<'PY' >/dev/null 2>&1
+import numpy
+import openpyxl
+import pandas
+import reportlab
+from superpower.server import app
+PY
+  then
+    echo ""
+    echo "内置环境检查通过，无需安装 Python，也无需联网安装依赖。"
+    echo "现在可以双击「启动AI投研.command」。"
+    echo "按任意键退出。"
+    if [[ -t 0 ]]; then
+      read -k 1
+    fi
+    exit 0
+  fi
+  echo ""
+  echo "内置环境不完整，请联系交付方重新获取完整离线包。"
+  echo "按任意键退出。"
+  if [[ -t 0 ]]; then
+    read -k 1
+  fi
+  exit 1
+fi
 
 if [[ -x "$VENV_DIR/bin/python" ]]; then
   PYTHON="$VENV_DIR/bin/python"

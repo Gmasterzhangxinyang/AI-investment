@@ -102,13 +102,13 @@ watch     观察中
 
 ## 快速启动
 
-macOS 文件夹版第一次使用先双击：
+macOS Apple 芯片客户离线包已经包含 Python 和全部依赖，不要求客户预装 Python。第一次使用先双击：
 
 ```text
 初始化环境.command
 ```
 
-之后日常使用直接双击：
+该脚本会检查包内 `runtime/`，不联网安装。之后日常使用直接双击：
 
 ```text
 启动AI投研.command

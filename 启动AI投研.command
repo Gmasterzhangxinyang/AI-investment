@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATA_DIR="$ROOT_DIR/data/wind/current"
 PORT="${AI_RESEARCH_PORT:-8766}"
 URL="http://127.0.0.1:${PORT}/frontend/"
+BUNDLED_PYTHON="$ROOT_DIR/runtime/python/bin/python3"
+BUNDLED_SITE_PACKAGES="$ROOT_DIR/runtime/site-packages"
 
 ETF_FILE="01_ETF清单和日频公式.xlsx"
 TL_FILE="02_TL日频公式.xlsx"
@@ -38,14 +40,24 @@ if (( ${#missing[@]} > 0 )); then
   echo ""
 fi
 
-if [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+if [[ -x "$BUNDLED_PYTHON" && -d "$BUNDLED_SITE_PACKAGES" ]]; then
+  PYTHON="$BUNDLED_PYTHON"
+  export PYTHONPATH="$BUNDLED_SITE_PACKAGES:$ROOT_DIR/backend:$ROOT_DIR"
+  export PYTHONNOUSERSITE=1
+  export PYTHONDONTWRITEBYTECODE=1
+  if [[ -f "$BUNDLED_SITE_PACKAGES/certifi/cacert.pem" ]]; then
+    export SSL_CERT_FILE="$BUNDLED_SITE_PACKAGES/certifi/cacert.pem"
+  fi
+  echo "使用交付包内置运行环境（无需安装 Python）"
+elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
   PYTHON="$ROOT_DIR/.venv/bin/python"
 elif command -v python3 >/dev/null 2>&1; then
   PYTHON="$(command -v python3)"
 elif command -v python >/dev/null 2>&1; then
   PYTHON="$(command -v python)"
 else
-  echo "没有找到 Python。请先安装 Python 3.11+，或把可用 Python 放到 .venv/bin/python。"
+  echo "交付包缺少内置运行环境，并且电脑上没有找到 Python。"
+  echo "请联系交付方重新获取完整离线版，或先安装 Python 3.11+。"
   echo "按任意键退出。"
   if [[ -t 0 ]]; then
     read -k 1
